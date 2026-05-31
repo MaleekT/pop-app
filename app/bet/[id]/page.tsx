@@ -111,8 +111,10 @@ export default function BetDetailPage() {
   const status = CONTRACT_STATUS[bet.status] ?? 'Pending'
   const nowMs = Date.now()
   const CHALLENGE_WINDOW_SECS = 3600 // 1 hour — must match Pop.sol CHALLENGE_WINDOW
+  const RESOLUTION_TIMEOUT_SECS = 30 * 24 * 60 * 60 // 30 days — must match Pop.sol RESOLUTION_TIMEOUT
   const challengeDeadlineMs = bet.proposedAt > 0n ? (Number(bet.proposedAt) + CHALLENGE_WINDOW_SECS) * 1000 : 0
   const resolveAtMs = Number(bet.resolveAt) * 1000
+  const resolutionTimeoutMs = bet.acceptedAt > 0n ? (Number(bet.acceptedAt) + RESOLUTION_TIMEOUT_SECS) * 1000 : 0
   const claimDeadlineMs = dbBet?.claim_deadline ? new Date(dbBet.claim_deadline).getTime() : 0
 
   // Definition text + tamper check
@@ -408,7 +410,7 @@ export default function BetDetailPage() {
           </>
         )}
 
-        {status === 'Locked' && isParticipant && resolveAtMs > 0 && nowMs >= resolveAtMs && (
+        {status === 'Locked' && isParticipant && resolutionTimeoutMs > 0 && nowMs >= resolutionTimeoutMs && (
           <ActionButton label={txPending ? 'Claiming refund…' : 'Claim refund (resolver timed out)'} disabled={txPending} onClick={() => doAction(() => writeContractAsync({ address: POP_CONTRACT, abi: popAbi, functionName: 'claimExpired', args: [BigInt(id)] }))} />
         )}
 
