@@ -81,16 +81,6 @@ export default function Home() {
 
           {/* Left column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8, width: 'fit-content',
-              background: 'rgba(215,255,30,0.07)', border: '1px solid rgba(215,255,30,0.2)',
-              borderRadius: 'var(--radius-pill)', padding: '6px 14px',
-              fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.12em', color: 'var(--color-pop-accent)',
-            }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-pop-accent)', display: 'inline-block' }} />
-              PRIVATE BETS. AUTOMATED SETTLEMENT.
-            </span>
-
             <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(3.5rem, 6vw, 6rem)', lineHeight: 0.95, letterSpacing: '0.02em', margin: 0 }}>
               <span style={{ color: 'var(--color-pop-text)', display: 'block' }}>SETTLE BETS.</span>
               <span style={{ color: 'var(--color-pop-accent)', display: 'block' }}>WITHOUT DOUBT.</span>
