@@ -6,9 +6,9 @@ import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { Logo } from '@/components/Logo'
 
 const NAV_LINKS = [
-  { label: 'Home', href: '/' },
+  { label: 'Home',  href: '/' },
   { label: 'About', href: '/#about' },
-  { label: 'FAQ', href: '/#faq' },
+  { label: 'FAQ',   href: '/#faq' },
   { label: 'Lobby', href: '/lobby' },
 ] as const
 
@@ -21,18 +21,21 @@ export function AppNav() {
         position: 'sticky',
         top: 0,
         zIndex: 50,
-        display: 'grid',
-        gridTemplateColumns: '1fr auto 1fr',
+        display: 'flex',
         alignItems: 'center',
-        padding: '12px 24px',
-        background: 'rgba(11,11,15,0.92)',
+        justifyContent: 'space-between',
+        padding: '14px 32px',
+        background: 'rgba(11,11,15,0.88)',
         backdropFilter: 'blur(12px)',
         borderBottom: '1px solid var(--color-pop-surface-2)',
       }}
     >
-      <Logo size="sm" />
+      <Logo size="md" />
 
-      <div className="nav-links">
+      <div
+        className="nav-links"
+        style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}
+      >
         {NAV_LINKS.map(({ label, href }) => {
           const isActive =
             href === '/'
@@ -54,7 +57,8 @@ export function AppNav() {
         })}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <Link href="/my" className="my-bets-link">My Bets</Link>
         <ConnectButton />
       </div>
     </nav>

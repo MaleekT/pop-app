@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { AppNav } from '@/components/AppNav'
 import { useAccount, useWatchContractEvent } from 'wagmi'
 import { formatUnits } from 'viem'
 import { motion } from 'framer-motion'
@@ -69,36 +69,7 @@ export default function Home() {
     <>
       <PopCelebration userAddress={address} />
 
-      {/* ── NAV ─────────────────────────────────────────────────────────── */}
-      <nav style={{
-        position: 'sticky', top: 0, zIndex: 50,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '14px 32px',
-        background: 'rgba(11,11,15,0.88)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--color-pop-surface-2)',
-      }}>
-        <Logo size="md" />
-
-        <div className="nav-links" style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
-          {NAV_LINKS.map(({ label, href }) => (
-            <a
-              key={href}
-              href={href}
-              style={{ color: 'var(--color-pop-muted)', textDecoration: 'none', fontSize: '0.9375rem', fontWeight: 500 }}
-              onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-pop-text)')}
-              onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-pop-muted)')}
-            >
-              {label}
-            </a>
-          ))}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Link href="/my" className="my-bets-link">My Bets</Link>
-          <ConnectButton />
-        </div>
-      </nav>
+      <AppNav />
 
       {/* ── HERO ────────────────────────────────────────────────────────── */}
       <section style={{
@@ -446,12 +417,6 @@ export default function Home() {
 
 // ── Static data ───────────────────────────────────────────────────────────────
 
-const NAV_LINKS = [
-  { label: 'Home', href: '/' },
-  { label: 'About', href: '#about' },
-  { label: 'FAQ', href: '#faq' },
-  { label: 'Lobby', href: '/lobby' },
-]
 
 const HOW_IT_WORKS = [
   {
