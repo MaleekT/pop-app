@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+/* ── Pop design tokens ──────────────────────────────────────────────────── */
+@theme inline {
+  /* Colours */
+  --color-pop-bg:        #0B0B0F;
+  --color-pop-surface:   #15151C;
+  --color-pop-surface-2: #1F1F28;
+  --color-pop-text:      #F5F5F7;
+  --color-pop-muted:     #A1A1AA;
+  --color-pop-accent:    #D7FF1E;   /* primary CTA, winnings, "pop" moment */
+  --color-pop-locked:    #FF3DA1;   /* Locked status */
+  --color-pop-pending:   #FBBF24;   /* Pending status */
+  --color-pop-win:       #22C55E;   /* winner / success */
+  --color-pop-lose:      #71717A;   /* loser / muted */
+  --color-pop-danger:    #EF4444;   /* errors / danger */
+
+  /* Typography */
+  --font-heading: var(--font-bebas);
+  --font-body:    var(--font-space);
+  --font-mono:    var(--font-space);
+
+  /* Radius */
+  --radius-card:  12px;
+  --radius-input: 8px;
+  --radius-pill:  999px;
+  --radius-cta:   14px;
+}
+
+/* ── Base ───────────────────────────────────────────────────────────────── */
+:root {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  background-color: var(--color-pop-bg);
+  color: var(--color-pop-text);
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+/* ── Focus-visible ring (consistent across all interactive elements) ────── */
+:focus-visible {
+  outline: 2px solid var(--color-pop-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Landing page responsive layout classes ─────────────────────────────── */
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 64px;
+  align-items: center;
+}
+
+.nav-links {
+  display: flex;
+  gap: 32px;
+  align-items: center;
+}
+
+.nav-link,
+.my-bets-link {
+  color: var(--color-pop-muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-radius: 4px;
+  transition: color 0.15s;
+  outline-offset: 3px;
+}
+
+.nav-link:hover,
+.my-bets-link:hover {
+  color: var(--color-pop-text);
+}
+
+.nav-link:focus-visible,
+.my-bets-link:focus-visible {
+  color: var(--color-pop-accent);
+  outline: 2px solid var(--color-pop-accent);
+}
+
+.hiw-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  position: relative;
+}
+
+.markets-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.fair-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 64px;
+  align-items: center;
+}
+
+.footer-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+}
+
+.stats-bar {
+  display: flex;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+
+/* Tablet: ≤ 1023px — 4-col → 2-col grids, tighter gaps */
+@media (max-width: 1023px) {
+  .hiw-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+  }
+  .markets-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .hero-grid {
+    gap: 40px;
+  }
+  .fair-grid {
+    gap: 40px;
+  }
+}
+
+/* Mobile: ≤ 639px — single column, stacked layout, nav hidden */
+@media (max-width: 639px) {
+  .nav-links {
+    display: none;
+  }
+  .hero-grid {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .hiw-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .markets-grid {
+    grid-template-columns: 1fr;
+  }
+  .fair-grid {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .footer-flex {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 16px;
+  }
+  .stats-bar {
+    gap: 24px;
+  }
+}
