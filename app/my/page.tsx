@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { UsdcAmount } from '@/components/UsdcAmount'
 import { AddressLink } from '@/components/TxLink'
 import type { BetRow, BetStatus } from '@/lib/db.types'
+import { formatBetTitle } from '@/lib/display-name'
 import { AppNav } from '@/components/AppNav'
 
 type Tab = 'Active' | 'Resolved' | 'Disputed'
@@ -195,7 +196,7 @@ export default function MyBetsPage() {
                   {/* Top row */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                     <p style={{ fontSize: '0.9375rem', lineHeight: 1.5, maxWidth: '75%', margin: 0 }}>
-                      {bet.definition_text.length > 90 ? bet.definition_text.slice(0, 90) + '…' : bet.definition_text}
+                      {(() => { const t = formatBetTitle(bet.definition_text); return t.length > 90 ? t.slice(0, 90) + '…' : t })()}
                     </p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                       <StatusBadge status={bet.status} />

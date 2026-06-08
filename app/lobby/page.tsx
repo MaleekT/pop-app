@@ -6,6 +6,7 @@ import { UsdcAmount } from '@/components/UsdcAmount'
 import { StatusBadge } from '@/components/StatusBadge'
 import type { BetRow } from '@/lib/db.types'
 import { AppNav } from '@/components/AppNav'
+import { formatBetTitle } from '@/lib/display-name'
 
 const REFRESH_INTERVAL = 30_000
 
@@ -62,7 +63,7 @@ function LobbyRow({ bet, profile }: { bet: BetRow; profile?: { handle?: string |
     >
       <div>
         <p style={{ color: 'var(--color-pop-text)', fontWeight: 600, marginBottom: 4, fontSize: '0.9375rem', lineHeight: 1.4 }}>
-          {bet.definition_text}
+          {formatBetTitle(bet.definition_text)}
         </p>
         <p style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem', margin: 0, fontFamily: profile?.handle ? undefined : 'var(--font-mono)' }}>
           by {creatorLabel}

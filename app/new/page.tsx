@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { motion } from 'framer-motion'
+import { formatBetTitle } from '@/lib/display-name'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { keccak256, toHex, parseUnits, getAddress, parseEventLogs } from 'viem'
@@ -1199,7 +1200,7 @@ function NewBetInner() {
           <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.75rem', fontWeight: 800, marginBottom: 32 }}>Confirm bet</h1>
 
           <div style={{ background: 'var(--color-pop-surface)', border: '1px solid var(--color-pop-surface-2)', borderRadius: 'var(--radius-card)', padding: 24, marginBottom: 24 }}>
-            <p style={{ color: 'var(--color-pop-text)', lineHeight: 1.6, marginBottom: 16 }}>{definitionText}</p>
+            <p style={{ color: 'var(--color-pop-text)', lineHeight: 1.6, marginBottom: 16 }}>{formatBetTitle(definitionText)}</p>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--color-pop-muted)', wordBreak: 'break-all' }}>
               keccak256: {definitionHash}
             </div>
@@ -1246,7 +1247,7 @@ function NewBetInner() {
           <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.75rem', fontWeight: 800, marginBottom: 32 }}>Post to lobby</h1>
 
           <div style={{ background: 'var(--color-pop-surface)', border: '1px solid var(--color-pop-surface-2)', borderRadius: 'var(--radius-card)', padding: 24, marginBottom: 24 }}>
-            <p style={{ color: 'var(--color-pop-text)', lineHeight: 1.6, marginBottom: 16 }}>{definitionText}</p>
+            <p style={{ color: 'var(--color-pop-text)', lineHeight: 1.6, marginBottom: 16 }}>{formatBetTitle(definitionText)}</p>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--color-pop-muted)', wordBreak: 'break-all' }}>
               keccak256: {definitionHash}
             </div>

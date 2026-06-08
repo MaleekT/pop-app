@@ -12,6 +12,7 @@ import { TxLink, AddressLink } from '@/components/TxLink'
 import { Countdown } from '@/components/Countdown'
 import { AppNav } from '@/components/AppNav'
 import type { BetRow } from '@/lib/db.types'
+import { formatBetTitle } from '@/lib/display-name'
 
 type OnChainBet = {
   creator: `0x${string}`
@@ -228,7 +229,7 @@ export default function BetDetailPage() {
         {dbLoading ? (
           <p style={{ color: 'var(--color-pop-muted)' }}>Loading definition…</p>
         ) : definitionText ? (
-          <p style={{ lineHeight: 1.7, fontSize: '1.0625rem' }}>{definitionText}</p>
+          <p style={{ lineHeight: 1.7, fontSize: '1.0625rem' }}>{formatBetTitle(definitionText)}</p>
         ) : (
           <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--color-pop-muted)', wordBreak: 'break-all' }}>
             Definition hash: {bet.definitionHash}

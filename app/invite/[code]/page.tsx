@@ -7,6 +7,7 @@ import { useAccount } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { formatUnits } from 'viem'
 import type { InviteRow } from '@/lib/db.types'
+import { formatBetTitle } from '@/lib/display-name'
 
 export default function InvitePage() {
   const { code } = useParams<{ code: string }>()
@@ -83,7 +84,7 @@ export default function InvitePage() {
             {/* Bet terms */}
             <div style={{ background: 'var(--color-pop-surface)', border: '1px solid var(--color-pop-surface-2)', borderRadius: 'var(--radius-card)', padding: 24, marginBottom: 24 }}>
               <p style={{ color: 'var(--color-pop-text)', lineHeight: 1.7, fontSize: '1.05rem', marginBottom: 16 }}>
-                {invite.definition_text}
+                {formatBetTitle(invite.definition_text)}
               </p>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--color-pop-muted)', wordBreak: 'break-all' }}>
                 keccak256: {invite.definition_hash}
