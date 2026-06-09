@@ -39,6 +39,7 @@ export default function BetDetailPage() {
   const [dbLoading, setDbLoading] = useState(true)
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>()
   const [actionError, setActionError] = useState('')
+  const [pendingOpponentOutcome, setPendingOpponentOutcome] = useState('')
   const [profiles, setProfiles] = useState<Record<string, { handle?: string | null }>>({})
   const { writeContractAsync } = useWriteContract()
   const { isLoading: txPending } = useWaitForTransactionReceipt({ hash: txHash })
@@ -126,6 +127,13 @@ export default function BetDetailPage() {
   const isCreator = address?.toLowerCase() === bet.creator.toLowerCase()
   const isOpponent = address?.toLowerCase() === bet.opponent.toLowerCase()
   const isParticipant = isCreator || isOpponent
+
+  // 3-way football bet derived values
+  const isThreeWayBet = dbBet?.template_key === 'sports_winner' && !!dbBet?.params?.creatorOutcome
+  const homeTeam = dbBet?.params?.homeTeam ?? ''
+  const awayTeam = dbBet?.params?.awayTeam ?? ''
+  const creatorOutcome = dbBet?.params?.creatorOutcome ?? ''
+  const isKnockoutForBet = dbBet?.params?.isKnockoutGame === 'true'
   const userIsWinner = status === 'Resolved' && isParticipant && !!address &&
     bet.proposedWinner.toLowerCase() === address.toLowerCase()
   const userIsLoser = status === 'Resolved' && isParticipant && !userIsWinner
@@ -181,13 +189,24 @@ export default function BetDetailPage() {
       if (updated) {
         const newStatus = CONTRACT_STATUS[updated.status]
         if (newStatus) {
+          const patchBody: Record<string, string> = { status: newStatus, opponent: address ?? '' }
+          if (isThreeWayBet && pendingOpponentOutcome) {
+            patchBody.opponentOutcome = pendingOpponentOutcome
+          }
           await fetch(`/api/bets/${id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            // Write the opponent address so the claimer sees the bet in My Bets
-            body: JSON.stringify({ status: newStatus, opponent: address }),
+            // Write opponent address so the claimer sees the bet in My Bets
+            body: JSON.stringify(patchBody),
           }).catch(() => {})
-          setDbBet(prev => prev ? { ...prev, status: newStatus as typeof CONTRACT_STATUS[number], opponent: address ?? '' } : prev)
+          setDbBet(prev => {
+            if (!prev) return prev
+            const next = { ...prev, status: newStatus as typeof CONTRACT_STATUS[number], opponent: address ?? '' }
+            if (isThreeWayBet && pendingOpponentOutcome) {
+              return { ...next, params: { ...prev.params, opponentOutcome: pendingOpponentOutcome } }
+            }
+            return next
+          })
         }
       }
     } catch (e) {
@@ -198,15 +217,47 @@ export default function BetDetailPage() {
 
   async function handleAccept() {
     if (!bet) return
-    const needsApprove = !allowance || (allowance as bigint) < bet.stake
-    if (needsApprove) {
-      await doAction(() =>
-        writeContractAsync({ address: USDC, abi: erc20Abi, functionName: 'approve', args: [POP_CONTRACT, bet.stake] })
-      )
+    setActionError('')
+    try {
+      const needsApprove = !allowance || (allowance as bigint) < bet.stake
+      if (needsApprove) {
+        const approveHash = await writeContractAsync({
+          address: USDC, abi: erc20Abi, functionName: 'approve', args: [POP_CONTRACT, bet.stake],
+        })
+        setTxHash(approveHash)
+        await publicClient.waitForTransactionReceipt({ hash: approveHash })
+      }
+      const acceptHash = await writeContractAsync({
+        address: POP_CONTRACT, abi: popAbi, functionName: 'acceptBet', args: [BigInt(id)],
+      })
+      setTxHash(acceptHash)
+      await publicClient.waitForTransactionReceipt({ hash: acceptHash })
+      const result = await refetch()
+      const updated = result.data as OnChainBet | undefined
+      if (updated != null) {
+        const newStatus = CONTRACT_STATUS[updated.status]
+        if (newStatus) {
+          const patchBody: Record<string, string> = { status: newStatus }
+          if (isThreeWayBet && pendingOpponentOutcome) {
+            patchBody.opponentOutcome = pendingOpponentOutcome
+          }
+          await fetch(`/api/bets/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patchBody),
+          }).catch(() => {})
+          setDbBet(prev => {
+            if (!prev) return prev
+            if (isThreeWayBet && pendingOpponentOutcome) {
+              return { ...prev, status: newStatus as typeof CONTRACT_STATUS[number], params: { ...prev.params, opponentOutcome: pendingOpponentOutcome } }
+            }
+            return { ...prev, status: newStatus as typeof CONTRACT_STATUS[number] }
+          })
+        }
+      }
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Transaction failed.')
     }
-    await doAction(() =>
-      writeContractAsync({ address: POP_CONTRACT, abi: popAbi, functionName: 'acceptBet', args: [BigInt(id)] })
-    )
   }
 
   return (
@@ -236,6 +287,29 @@ export default function BetDetailPage() {
           </p>
         )}
       </div>
+
+      {/* Picks — 3-way football bets only */}
+      {isThreeWayBet && dbBet && (
+        <div style={{ background: 'var(--color-pop-surface)', border: '1px solid var(--color-pop-surface-2)', borderRadius: 'var(--radius-card)', padding: 20, marginBottom: 20 }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-pop-muted)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Picks</div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--color-pop-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Creator</div>
+              <div style={{ fontWeight: 600 }}>{outcomeLabel(creatorOutcome, homeTeam, awayTeam)}</div>
+            </div>
+            <div style={{ width: 1, background: 'var(--color-pop-surface-2)', flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--color-pop-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Opponent</div>
+              <div style={{ fontWeight: 600 }}>
+                {dbBet.params.opponentOutcome
+                  ? outcomeLabel(dbBet.params.opponentOutcome, homeTeam, awayTeam)
+                  : <span style={{ color: 'var(--color-pop-muted)', fontStyle: 'italic' }}>Waiting for opponent…</span>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Financials */}
       <div style={{ background: 'var(--color-pop-surface)', border: '1px solid var(--color-pop-surface-2)', borderRadius: 'var(--radius-card)', padding: 20, marginBottom: 20, display: 'flex', justifyContent: 'space-around' }}>
@@ -374,7 +448,24 @@ export default function BetDetailPage() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {status === 'Open' && address && !isCreator && claimDeadlineMs > nowMs && (
-          <ActionButton label={txPending ? 'Claiming…' : 'Take this bet'} accent disabled={txPending} onClick={handleClaim} />
+          <>
+            {isThreeWayBet && (
+              <OutcomePicker
+                homeTeam={homeTeam}
+                awayTeam={awayTeam}
+                creatorOutcome={creatorOutcome}
+                isKnockout={isKnockoutForBet}
+                value={pendingOpponentOutcome}
+                onChange={setPendingOpponentOutcome}
+              />
+            )}
+            <ActionButton
+              label={txPending ? 'Claiming…' : 'Take this bet'}
+              accent
+              disabled={txPending || (isThreeWayBet && !pendingOpponentOutcome)}
+              onClick={handleClaim}
+            />
+          </>
         )}
 
         {status === 'Open' && isCreator && claimDeadlineMs > nowMs && (
@@ -387,8 +478,27 @@ export default function BetDetailPage() {
 
         {status === 'Pending' && isOpponent && (
           <>
-            <ActionButton label={txPending ? 'Accepting…' : 'Accept bet'} disabled={txPending} accent onClick={handleAccept} />
-            <ActionButton label="Decline" disabled={txPending} onClick={() => doAction(() => writeContractAsync({ address: POP_CONTRACT, abi: popAbi, functionName: 'declineBet', args: [BigInt(id)] }))} />
+            {isThreeWayBet && (
+              <OutcomePicker
+                homeTeam={homeTeam}
+                awayTeam={awayTeam}
+                creatorOutcome={creatorOutcome}
+                isKnockout={isKnockoutForBet}
+                value={pendingOpponentOutcome}
+                onChange={setPendingOpponentOutcome}
+              />
+            )}
+            <ActionButton
+              label={txPending ? 'Accepting…' : 'Accept bet'}
+              accent
+              disabled={txPending || (isThreeWayBet && !pendingOpponentOutcome)}
+              onClick={handleAccept}
+            />
+            <ActionButton
+              label="Decline"
+              disabled={txPending}
+              onClick={() => doAction(() => writeContractAsync({ address: POP_CONTRACT, abi: popAbi, functionName: 'declineBet', args: [BigInt(id)] }))}
+            />
           </>
         )}
 
@@ -527,6 +637,95 @@ function ResolutionEvidence({ dbBet }: { dbBet: BetRow }) {
           </span>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ─── 3-way bet helpers ───────────────────────────────────────────────────────
+
+function outcomeLabel(outcome: string, homeTeam: string, awayTeam: string): string {
+  if (outcome === 'home_win') return `${homeTeam} wins`
+  if (outcome === 'away_win') return `${awayTeam} wins`
+  if (outcome === 'draw') return 'Draw'
+  return outcome
+}
+
+interface OutcomePickerProps {
+  homeTeam: string
+  awayTeam: string
+  creatorOutcome: string
+  isKnockout: boolean
+  value: string
+  onChange: (outcome: string) => void
+}
+
+function OutcomePicker({ homeTeam, awayTeam, creatorOutcome, isKnockout, value, onChange }: OutcomePickerProps) {
+  const [focusedOutcome, setFocusedOutcome] = useState<string | null>(null)
+
+  const options = isKnockout
+    ? [
+        { value: 'home_win', label: `${homeTeam} wins` },
+        { value: 'away_win', label: `${awayTeam} wins` },
+      ]
+    : [
+        { value: 'home_win', label: `${homeTeam} wins` },
+        { value: 'draw',     label: 'Draw' },
+        { value: 'away_win', label: `${awayTeam} wins` },
+      ]
+
+  return (
+    <div style={{ background: 'var(--color-pop-surface)', border: '1px solid var(--color-pop-surface-2)', borderRadius: 'var(--radius-card)', padding: '16px 20px' }}>
+      <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-pop-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        Your pick
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {options.map(({ value: v, label }) => {
+          const isCreatorChoice = v === creatorOutcome
+          const isActive = value === v
+          const isFocused = focusedOutcome === v
+          return (
+            <button
+              key={v}
+              type="button"
+              disabled={isCreatorChoice}
+              onClick={() => { if (!isCreatorChoice) onChange(v) }}
+              onFocus={() => setFocusedOutcome(v)}
+              onBlur={() => setFocusedOutcome(null)}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: '10px 8px',
+                borderRadius: 'var(--radius-input)',
+                border: '1px solid',
+                borderColor: isActive ? 'var(--color-pop-accent)' : 'var(--color-pop-surface-2)',
+                background: isCreatorChoice
+                  ? 'transparent'
+                  : isActive
+                    ? 'rgba(215,255,30,0.08)'
+                    : 'var(--color-pop-surface)',
+                color: isCreatorChoice
+                  ? 'rgba(255,255,255,0.2)'
+                  : isActive
+                    ? 'var(--color-pop-accent)'
+                    : 'var(--color-pop-text)',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                cursor: isCreatorChoice ? 'not-allowed' : 'pointer',
+                textAlign: 'center',
+                outline: isFocused && !isCreatorChoice ? '2px solid var(--color-pop-accent)' : 'none',
+                outlineOffset: 2,
+              }}
+            >
+              {label}
+              {isCreatorChoice && (
+                <span style={{ display: 'block', fontSize: '0.65rem', color: 'rgba(255,255,255,0.25)', marginTop: 2 }}>
+                  creator&apos;s pick
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }

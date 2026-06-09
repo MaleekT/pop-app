@@ -20,6 +20,34 @@ export interface SportFixture {
   awayTeam: string
   league: string
   date: string
+  isKnockout: boolean
+}
+
+// ─── Knockout detection ───────────────────────────────────────────────────────
+
+const KNOCKOUT_KEYWORDS = [
+  'final', 'semi', 'quarter', 'round of', 'knockout',
+  'play-off', 'playoff', 'elimination',
+]
+
+function isKnockoutRound(strRound: string | null | undefined): boolean {
+  if (!strRound) return false
+  const lower = strRound.toLowerCase()
+  return KNOCKOUT_KEYWORDS.some(kw => lower.includes(kw))
+}
+
+async function fetchKnockoutStatus(tsdbEventId: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `${TSDB_BASE}/lookupevent.php?id=${encodeURIComponent(tsdbEventId)}`,
+      { signal: AbortSignal.timeout(4_000), next: { revalidate: REVALIDATE_SECONDS } },
+    )
+    if (!res.ok) return false
+    const data = (await res.json()) as { events: Array<{ strRound: string | null }> | null }
+    return isKnockoutRound(data.events?.[0]?.strRound)
+  } catch {
+    return false
+  }
 }
 
 // ─── TheSportsDB event shape ─────────────────────────────────────────────────
@@ -581,6 +609,7 @@ async function apiGet<T>(
 async function fetchTsdbFixtures(
   tsdbTeamId: string,
   originalQuery: string,
+  detectKnockout = false,
 ): Promise<{ fixtures: SportFixture[]; error?: string }> {
   try {
     const res = await fetch(
@@ -593,8 +622,8 @@ async function fetchTsdbFixtures(
     const events = data.events ?? []
     const now = Date.now()
 
-    const fixtures: SportFixture[] = events
-      .flatMap((e): SportFixture[] => {
+    const rawFixtures: Omit<SportFixture, 'isKnockout'>[] = events
+      .flatMap((e): Omit<SportFixture, 'isKnockout'>[] => {
         if (!e?.idEvent || !e.strHomeTeam || !e.strAwayTeam || !e.dateEvent) return []
         const timeStr = e.strTime ?? '00:00:00'
         const rawDateStr = `${e.dateEvent}T${timeStr}`
@@ -614,7 +643,18 @@ async function fetchTsdbFixtures(
       .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
       .slice(0, 10)
 
-    if (fixtures.length > 0) return { fixtures }
+    if (rawFixtures.length > 0) {
+      let fixtures: SportFixture[]
+      if (detectKnockout) {
+        const knockoutStatuses = await Promise.all(
+          rawFixtures.map(f => fetchKnockoutStatus(f.id.replace('tsdb:', '')))
+        )
+        fixtures = rawFixtures.map((f, i) => ({ ...f, isKnockout: knockoutStatuses[i] }))
+      } else {
+        fixtures = rawFixtures.map(f => ({ ...f, isKnockout: false }))
+      }
+      return { fixtures }
+    }
 
     return {
       fixtures: [],
@@ -671,7 +711,7 @@ async function searchViaApiFootball(
         const away = f?.teams?.away?.name
         const ts = date ? Date.parse(date) : NaN
         if (fid == null || !home || !away || isNaN(ts) || ts <= now) return []
-        return [{ id: String(fid), homeTeam: home, awayTeam: away, league: f.league?.name ?? 'Match', date }]
+        return [{ id: String(fid), homeTeam: home, awayTeam: away, league: f.league?.name ?? 'Match', date, isKnockout: false }]
       })
       .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
       .slice(0, 10)
@@ -692,7 +732,7 @@ async function searchFootball(query: string): Promise<{ fixtures: SportFixture[]
   const tsdbId = tsdbLookup(resolved, TSDB_FOOTBALL_MAP)
 
   if (tsdbId) {
-    const tsdbResult = await fetchTsdbFixtures(tsdbId, query)
+    const tsdbResult = await fetchTsdbFixtures(tsdbId, query, true)
     if (tsdbResult.fixtures.length > 0) return tsdbResult
     // TSDB found the team but has no scheduled fixtures (off-season gap).
     // Try API-Football which may cover a different calendar window.

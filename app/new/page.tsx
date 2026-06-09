@@ -208,7 +208,7 @@ function LivePriceChip({ coinId }: { coinId: string }) {
 
 // ─── Match search ────────────────────────────────────────────────────────────
 
-interface SportFixture { id: string; homeTeam: string; awayTeam: string; league: string; date: string }
+interface SportFixture { id: string; homeTeam: string; awayTeam: string; league: string; date: string; isKnockout: boolean }
 
 // Parse a datetime-local input value ("YYYY-MM-DDTHH:MM") as UTC.
 // HTML datetime-local inputs have no timezone — appending :00Z makes JS treat the value
@@ -530,6 +530,7 @@ function NewBetInner() {
   const [step, setStep] = useState<Step>('template')
   const [selectedKey, setSelectedKey] = useState<TemplateKey | null>(null)
   const [formValues, setFormValues] = useState<Record<string, string>>({})
+  const [isKnockoutGame, setIsKnockoutGame] = useState(false)
   const [opponent, setOpponent] = useState('')
   const [stakeUsdc, setStakeUsdc] = useState('')
   const [joinDeadlineDate, setJoinDeadlineDate] = useState('')
@@ -586,6 +587,11 @@ function NewBetInner() {
   async function handlePreview() {
     setError('')
     if (!template) return
+
+    if (selectedKey === 'sports_winner' && formValues.sport === 'football' && !formValues.creatorOutcome) {
+      setError('Please select your outcome (home win, draw, or away win).')
+      return
+    }
 
     if (betType === 'open') {
       if (!claimDeadlineDate || !formValues.resolveAt) {
@@ -990,7 +996,10 @@ function NewBetInner() {
                         <button
                           key={s}
                           type="button"
-                          onClick={() => setFormValues(v => ({ ...v, sport: s, fixtureId: '', homeTeam: '', awayTeam: '', pickedTeam: '' }))}
+                          onClick={() => {
+                          setFormValues(v => ({ ...v, sport: s, fixtureId: '', homeTeam: '', awayTeam: '', pickedTeam: '', creatorOutcome: '' }))
+                          setIsKnockoutGame(false)
+                        }}
                           style={{
                             flex: 1, padding: '10px 0', borderRadius: 'var(--radius-input)',
                             border: '1px solid',
@@ -1011,6 +1020,7 @@ function NewBetInner() {
                         homeTeam={formValues.homeTeam ?? ''}
                         awayTeam={formValues.awayTeam ?? ''}
                         onChange={(fixture) => {
+                          setIsKnockoutGame(fixture.isKnockout)
                           const isSportsBet = selectedKey === 'sports_winner' || selectedKey === 'sports_score'
                           const matchStartMs = new Date(fixture.date).getTime()
                           if (isSportsBet && !isNaN(matchStartMs)) {
@@ -1027,6 +1037,7 @@ function NewBetInner() {
                               awayTeam: fixture.awayTeam,
                               resolveAt: resolveTs,
                               pickedTeam: '',
+                              creatorOutcome: '',
                             }))
                           } else {
                             const resolveAt = new Date(matchStartMs + 3 * 60 * 60 * 1000)
@@ -1038,6 +1049,7 @@ function NewBetInner() {
                               awayTeam: fixture.awayTeam,
                               resolveAt,
                               pickedTeam: '',
+                              creatorOutcome: '',
                             }))
                           }
                         }}
@@ -1049,25 +1061,80 @@ function NewBetInner() {
                     )
                   ) : field.name === 'pickedTeam' ? (
                     formValues.homeTeam ? (
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        {[formValues.homeTeam, formValues.awayTeam].filter(Boolean).map(team => (
-                          <button
-                            key={team}
-                            type="button"
-                            onClick={() => setFormValues(v => ({ ...v, pickedTeam: team }))}
-                            style={{
-                              flex: 1, padding: '10px 8px', borderRadius: 'var(--radius-input)',
-                              border: '1px solid',
-                              borderColor: formValues.pickedTeam === team ? 'var(--color-pop-accent)' : 'var(--color-pop-surface-2)',
-                              background: formValues.pickedTeam === team ? 'rgba(215,255,30,0.08)' : 'var(--color-pop-surface)',
-                              color: formValues.pickedTeam === team ? 'var(--color-pop-accent)' : 'var(--color-pop-text)',
-                              fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer',
-                            }}
-                          >
-                            {team}
-                          </button>
-                        ))}
-                      </div>
+                      selectedKey === 'sports_winner' && formValues.sport === 'football' ? (
+                        // ── 3-way outcome picker (football) ───────────────────
+                        // isKnockoutGame is boolean state (not read from formValues string)
+                        // formValues.isKnockoutGame is the string copy stored in params for the DB
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {(isKnockoutGame
+                            ? [
+                                { value: 'home_win', label: `${formValues.homeTeam} wins` },
+                                { value: 'away_win', label: `${formValues.awayTeam} wins` },
+                              ]
+                            : [
+                                { value: 'home_win', label: `${formValues.homeTeam} wins` },
+                                { value: 'draw',     label: 'Draw' },
+                                { value: 'away_win', label: `${formValues.awayTeam} wins` },
+                              ]
+                          ).map(({ value, label }) => {
+                            const active = formValues.creatorOutcome === value
+                            return (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => {
+                                  const pickedTeam = value === 'draw'
+                                    ? 'DRAW'
+                                    : value === 'home_win'
+                                      ? formValues.homeTeam
+                                      : formValues.awayTeam
+                                  // formValues is Record<string, string> — boolean stored as string
+                                  setFormValues(v => ({
+                                    ...v,
+                                    creatorOutcome: value,
+                                    pickedTeam,
+                                    opponentOutcome: '',
+                                    isKnockoutGame: isKnockoutGame ? 'true' : 'false',
+                                  }))
+                                }}
+                                style={{
+                                  flex: 1, padding: '10px 8px', borderRadius: 'var(--radius-input)',
+                                  border: '1px solid',
+                                  borderColor: active ? 'var(--color-pop-accent)' : 'var(--color-pop-surface-2)',
+                                  background: active ? 'rgba(215,255,30,0.08)' : 'var(--color-pop-surface)',
+                                  color: active ? 'var(--color-pop-accent)' : 'var(--color-pop-text)',
+                                  fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer',
+                                  minWidth: 0,
+                                }}
+                              >
+                                {label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        // ── Binary picker (basketball / non-sports_winner) ─────
+                        // creatorOutcome cleared on pick to keep state consistent
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          {[formValues.homeTeam, formValues.awayTeam].filter(Boolean).map(team => (
+                            <button
+                              key={team}
+                              type="button"
+                              onClick={() => setFormValues(v => ({ ...v, pickedTeam: team, creatorOutcome: '' }))}
+                              style={{
+                                flex: 1, padding: '10px 8px', borderRadius: 'var(--radius-input)',
+                                border: '1px solid',
+                                borderColor: formValues.pickedTeam === team ? 'var(--color-pop-accent)' : 'var(--color-pop-surface-2)',
+                                background: formValues.pickedTeam === team ? 'rgba(215,255,30,0.08)' : 'var(--color-pop-surface)',
+                                color: formValues.pickedTeam === team ? 'var(--color-pop-accent)' : 'var(--color-pop-text)',
+                                fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer',
+                              }}
+                            >
+                              {team}
+                            </button>
+                          ))}
+                        </div>
+                      )
                     ) : (
                       <p style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem', margin: 0, padding: '10px 0' }}>
                         ↑ Select a match first

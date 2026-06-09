@@ -64,6 +64,49 @@ function apiKey(): string | null {
   return key && key.trim().length > 0 ? key.trim() : null
 }
 
+// ─── 3-way outcome helpers ───────────────────────────────────────────────────
+
+type Outcome = 'home_win' | 'away_win' | 'draw'
+
+function computeActualOutcome(homeScore: number, awayScore: number): Outcome {
+  if (homeScore > awayScore) return 'home_win'
+  if (awayScore > homeScore) return 'away_win'
+  return 'draw'
+}
+
+// Returns a ResolveResult when both parties have explicit picks (new-format 3-way bets).
+// Returns null when creatorOutcome/opponentOutcome are absent, signalling fall-through
+// to the existing binary pickedTeam logic for backward compat with old bets.
+function resolveThreeWay(
+  params: Record<string, string>,
+  actualOutcome: Outcome,
+  creator: Address,
+  opponent: Address,
+  rawScore: string,
+  sourceUrl: string,
+  fetchedAt: string,
+): ResolveResult | null {
+  const { creatorOutcome, opponentOutcome } = params
+  if (!creatorOutcome || !opponentOutcome) return null
+
+  if (actualOutcome === creatorOutcome) {
+    return { pending: false, voided: false as const, winner: creator, rawValue: rawScore, sourceUrl, fetchedAt }
+  }
+  if (actualOutcome === opponentOutcome) {
+    return { pending: false, voided: false as const, winner: opponent, rawValue: rawScore, sourceUrl, fetchedAt }
+  }
+  // Neither party's pick was correct — void, both stakes refunded
+  return {
+    pending: false as const,
+    voided: true as const,
+    evidence: {
+      sourceUrl,
+      rawStatus: `Neither correct: result was ${actualOutcome}, creator picked ${creatorOutcome}, opponent picked ${opponentOutcome}`,
+      fetchedAt,
+    },
+  }
+}
+
 // ─── TheSportsDB resolver ────────────────────────────────────────────────────
 
 async function fetchTsdbEvent(
@@ -121,6 +164,14 @@ async function resolveTsdb(
   const rawScore = `${homeName} ${homeScore} - ${awayScore} ${awayName}`
 
   if (templateKey === 'sports_winner') {
+    const actualOutcome = computeActualOutcome(homeScore, awayScore)
+
+    // 3-way path: both parties made explicit picks (new-format bets)
+    const threeWayResult = resolveThreeWay(params, actualOutcome, creator, opponent, rawScore, sourceUrl, fetchedAt)
+    if (threeWayResult) return threeWayResult
+
+    // Binary fallback: creator picked a team name, opponent implicitly took the other side
+    // AET/PEN statuses always produce homeScore !== awayScore, so this path is safe for knockout games
     const { pickedTeam } = params
     if (!pickedTeam) return { pending: true }
 
@@ -234,6 +285,13 @@ async function resolveFootball(
   const rawScore = `${homeName} ${homeScore} - ${awayScore} ${awayName}`
 
   if (templateKey === 'sports_winner') {
+    const actualOutcome = computeActualOutcome(homeScore, awayScore)
+
+    // 3-way path: both parties made explicit picks (new-format bets)
+    const threeWayResult = resolveThreeWay(params, actualOutcome, creator, opponent, rawScore, sourceUrl, fetchedAt)
+    if (threeWayResult) return threeWayResult
+
+    // Binary fallback: creator picked a team name, opponent implicitly took the other side
     const { pickedTeam } = params
     if (!pickedTeam) return { pending: true }
 
