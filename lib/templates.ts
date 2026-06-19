@@ -68,8 +68,15 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
       { name: 'pickedTeam', label: 'Winner', type: 'text', placeholder: '' },
     ],
     boundSource: 'TheSportsDB / API-Football',
-    definition: (p) =>
-      `${p.pickedTeam || 'TBD'} will WIN ${p.homeTeam || 'home'} vs ${p.awayTeam || 'away'} (${p.sport || 'sports'} fixture #${p.fixtureId}) per TheSportsDB`,
+    definition: (p) => {
+      const home = p.homeTeam || 'home'
+      const away = p.awayTeam || 'away'
+      const fixture = `${home} vs ${away} (${p.sport || 'sports'} fixture #${p.fixtureId}) per TheSportsDB`
+      if (p.creatorOutcome === 'draw') return `${home} vs ${away} will END IN A DRAW (${p.sport || 'sports'} fixture #${p.fixtureId}) per TheSportsDB`
+      if (p.creatorOutcome === 'home_win') return `${home} will WIN ${fixture}`
+      if (p.creatorOutcome === 'away_win') return `${away} will WIN ${fixture}`
+      return `${p.pickedTeam || 'TBD'} will WIN ${fixture}`
+    },
     engine: 'sports',
   },
 
