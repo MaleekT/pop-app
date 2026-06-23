@@ -106,10 +106,12 @@ export default function LobbyPage() {
       if (!res.ok) { setFetchError(true); return }
       const data: BetRow[] = await res.json()
       if (!mountedRef.current) return
-      setBets(data)
+      // Hide link-only invite bets — they're shared privately, not browsable here.
+      const visible = data.filter(b => b.params?.inviteOnly !== 'true')
+      setBets(visible)
       setFetchError(false)
 
-      const addresses = [...new Set(data.map(b => b.creator))].filter(Boolean)
+      const addresses = [...new Set(visible.map(b => b.creator))].filter(Boolean)
       if (addresses.length > 0) {
         try {
           const pRes = await fetch(`/api/profile?addresses=${addresses.map(encodeURIComponent).join(',')}`)

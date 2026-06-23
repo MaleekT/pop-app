@@ -539,6 +539,10 @@ function NewBetInner() {
   const [copied, setCopied] = useState(false)
   const [betType, setBetType] = useState<'private' | 'open'>('private')
   const [claimDeadlineDate, setClaimDeadlineDate] = useState('')
+  // When true, the "private, no opponent address" path creates an on-chain OPEN bet
+  // (createOpenBet) and shows the creator a shareable /bet/{id} link, instead of the
+  // old off-chain invite. Flagged inviteOnly in params so the lobby hides it.
+  const [inviteLinkMode, setInviteLinkMode] = useState(false)
 
   const { writeContractAsync } = useWriteContract()
   const publicClient = usePublicClient()
@@ -594,6 +598,7 @@ function NewBetInner() {
     }
 
     if (betType === 'open') {
+      setInviteLinkMode(false)
       if (!claimDeadlineDate || !formValues.resolveAt) {
         setError('Claim deadline and resolve date are required.')
         return
@@ -632,40 +637,28 @@ function NewBetInner() {
       return
     }
 
-    // No opponent → create invite link
+    // No opponent → on-chain OPEN bet + shareable /bet/{id} link (hidden from lobby).
+    // Reuses the tested createOpenBet flow; the opponent picks a side and stakes in a
+    // single session, with no second trip back to the creator.
     if (!opponent.trim()) {
       if (!address) return
-      let stakeRaw: bigint
-      try {
-        stakeRaw = parseUnits(stakeUsdc, 6)
-      } catch {
-        setError('Invalid stake amount.')
+      // Open bets require the accept deadline to be ≥ MIN_GAP before resolve
+      // (2h for sports, 24h otherwise) or createOpenBet reverts with GapTooShort.
+      // The join deadline doubles as the open bet's claim deadline.
+      const isSportsBet = selectedKey === 'sports_winner' || selectedKey === 'sports_score'
+      const minGapMs = isSportsBet ? 2 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000
+      const minGapLabel = isSportsBet ? '2 hours' : '24 hours'
+      if (resolveAtTs - joinDeadlineTs < minGapMs) {
+        setError(`Join deadline must be at least ${minGapLabel} before resolve date.`)
         return
       }
-      const definitionText = template.definition({ ...formValues })
-      const definitionHash = keccak256(toHex(definitionText))
-
-      const res = await fetch('/api/invites', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          creator: address,
-          template_key: selectedKey,
-          params: formValues,
-          definition_text: definitionText,
-          definition_hash: definitionHash,
-          resolve_at: asUTC(formValues.resolveAt).toISOString(),
-          join_deadline: asUTC(joinDeadlineDate).toISOString(),
-          stake: stakeRaw.toString(),
-        }),
-      })
-      const body = await res.json() as { id?: string; error?: string; detail?: string }
-      if (!res.ok) { setError(body.detail ?? body.error ?? 'Failed to create invite.'); return }
-      setInviteId(body.id ?? '')
-      setStep('invite-link')
+      setClaimDeadlineDate(joinDeadlineDate)
+      setInviteLinkMode(true)
+      setStep('confirm-open')
       return
     }
 
+    setInviteLinkMode(false)
     setStep('confirm')
   }
 
@@ -840,7 +833,7 @@ function NewBetInner() {
           definition_text: definitionText,
           definition_hash: definitionHash,
           template_key: selectedKey,
-          params: formValues,
+          params: inviteLinkMode ? { ...formValues, inviteOnly: 'true' } : formValues,
           resolve_at: asUTC(formValues.resolveAt).toISOString(),
           claim_deadline: asUTC(claimDeadlineDate).toISOString(),
         }),
@@ -857,6 +850,14 @@ function NewBetInner() {
         return
       }
 
+      // Invite-link mode: show the creator a shareable /bet/{id} link instead of
+      // redirecting, so they can copy it and send it to their friend.
+      if (inviteLinkMode) {
+        setInviteId(betId)
+        setStep('invite-link')
+        return
+      }
+
       setStep('done')
       router.push(`/bet/${betId}`)
     } catch (e) {
@@ -866,7 +867,7 @@ function NewBetInner() {
   }
 
   function copyInviteLink() {
-    navigator.clipboard.writeText(`${window.location.origin}/invite/${inviteId}`)
+    navigator.clipboard.writeText(`${window.location.origin}/bet/${inviteId}`)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -1226,14 +1227,15 @@ function NewBetInner() {
 
   // ── Invite link ───────────────────────────────────────────────────────────
   if (step === 'invite-link') {
-    const inviteUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/invite/${inviteId}`
+    const inviteUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/bet/${inviteId}`
     return (
       <>
         <AppNav />
         <main style={{ maxWidth: 560, margin: '0 auto', padding: '48px 24px' }}>
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.75rem', fontWeight: 800, marginBottom: 12 }}>Invite created!</h1>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.75rem', fontWeight: 800, marginBottom: 12 }}>Bet created!</h1>
           <p style={{ color: 'var(--color-pop-muted)', marginBottom: 32 }}>
-            Share this link with your opponent. When they accept, come back here to create the bet on-chain.
+            Your bet is live on-chain and your stake is locked in. Share this link — your opponent
+            picks their side and stakes in one step, with no waiting on you.
           </p>
 
           <div style={{ background: 'var(--color-pop-surface)', border: '1px solid var(--color-pop-surface-2)', borderRadius: 'var(--radius-card)', padding: 20, marginBottom: 16 }}>
@@ -1245,8 +1247,8 @@ function NewBetInner() {
             </button>
           </div>
 
-          <button onClick={() => router.push(`/invite/${inviteId}`)} style={{ ...ctaStyle, background: 'var(--color-pop-surface)', color: 'var(--color-pop-text)', border: '1px solid var(--color-pop-surface-2)' }}>
-            View invite page →
+          <button onClick={() => router.push(`/bet/${inviteId}`)} style={{ ...ctaStyle, background: 'var(--color-pop-surface)', color: 'var(--color-pop-text)', border: '1px solid var(--color-pop-surface-2)' }}>
+            View bet page →
           </button>
         </main>
       </>
@@ -1254,7 +1256,7 @@ function NewBetInner() {
   }
 
   // ── Confirm / approving / creating ────────────────────────────────────────
-  if ((step === 'confirm' || (betType === 'private' && (step === 'approving' || step === 'creating'))) && template) {
+  if ((step === 'confirm' || (betType === 'private' && !inviteLinkMode && (step === 'approving' || step === 'creating'))) && template) {
     const definitionText = template.definition({ ...formValues })
     const definitionHash = keccak256(toHex(definitionText))
     const busy = step === 'approving' || step === 'creating'
@@ -1301,7 +1303,7 @@ function NewBetInner() {
   }
 
   // ── Confirm-open / approving / creating (open flow) ──────────────────────
-  if ((step === 'confirm-open' || (betType === 'open' && (step === 'approving' || step === 'creating'))) && template) {
+  if ((step === 'confirm-open' || ((betType === 'open' || inviteLinkMode) && (step === 'approving' || step === 'creating'))) && template) {
     const definitionText = template.definition({ ...formValues })
     const definitionHash = keccak256(toHex(definitionText))
     const busy = step === 'approving' || step === 'creating'
@@ -1311,7 +1313,7 @@ function NewBetInner() {
         <AppNav />
         <main style={{ maxWidth: 560, margin: '0 auto', padding: '48px 24px' }}>
           {!busy && <button onClick={() => setStep('form')} style={backBtnStyle}>← Back</button>}
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.75rem', fontWeight: 800, marginBottom: 32 }}>Post to lobby</h1>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.75rem', fontWeight: 800, marginBottom: 32 }}>{inviteLinkMode ? 'Confirm bet' : 'Post to lobby'}</h1>
 
           <div style={{ background: 'var(--color-pop-surface)', border: '1px solid var(--color-pop-surface-2)', borderRadius: 'var(--radius-card)', padding: 24, marginBottom: 24 }}>
             <p style={{ color: 'var(--color-pop-text)', lineHeight: 1.6, marginBottom: 16 }}>{formatBetTitle(definitionText)}</p>
@@ -1323,14 +1325,14 @@ function NewBetInner() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
             <Row label="Stake each" value={`${stakeUsdc} USDC`} />
             <Row label="Pot" value={`${(parseFloat(stakeUsdc) * 2).toFixed(2)} USDC`} accent />
-            <Row label="Claim deadline (UTC)" value={claimDeadlineDate ? asUTC(claimDeadlineDate).toUTCString().replace('GMT', 'UTC') : '—'} />
+            <Row label={inviteLinkMode ? 'Accept deadline (UTC)' : 'Claim deadline (UTC)'} value={claimDeadlineDate ? asUTC(claimDeadlineDate).toUTCString().replace('GMT', 'UTC') : '—'} />
           </div>
 
           {error && <p style={{ color: 'var(--color-pop-danger)', fontSize: '0.875rem', marginBottom: 16 }}>{error}</p>}
 
           {step === 'approving' && (
             <p style={{ color: 'var(--color-pop-muted)', fontSize: '0.875rem', marginBottom: 12 }}>
-              {approveLoading ? 'Approving USDC spend…' : 'Approval confirmed, posting bet…'}
+              {approveLoading ? 'Approving USDC spend…' : inviteLinkMode ? 'Approval confirmed, creating bet…' : 'Approval confirmed, posting bet…'}
             </p>
           )}
           {step === 'creating' && (
@@ -1340,7 +1342,7 @@ function NewBetInner() {
           )}
 
           <button onClick={handleCreateOpen} disabled={busy} style={{ ...ctaStyle, opacity: busy ? 0.5 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}>
-            {busy ? 'Processing…' : 'Approve & post to lobby'}
+            {busy ? 'Processing…' : inviteLinkMode ? 'Approve & create bet' : 'Approve & post to lobby'}
           </button>
         </main>
       </>
