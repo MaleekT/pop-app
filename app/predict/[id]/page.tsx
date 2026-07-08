@@ -77,6 +77,8 @@ export default function MarketDetailPage() {
   const userStakes = outcomes.map((_, i) => (stakesData?.[i]?.result as bigint | undefined) ?? 0n)
   const totalUserStake = userStakes.reduce((a, b) => a + b, 0n)
   const hasClaimed = Boolean(claimedData)
+  // Pooled markets are one-side-per-user: once you hold a position, deposits lock to it.
+  const userOutcome = userStakes.findIndex((s) => s > 0n)
 
   const resolveMs = new Date(market.resolve_at).getTime()
   const bettingOpen = status === 'Pending' && resolveMs > Date.now()
@@ -122,7 +124,15 @@ export default function MarketDetailPage() {
           </div>
         )}
 
-        {bettingOpen && <DepositPanel marketId={onChainId} onChainIdStr={market.on_chain_id} outcomes={outcomes} onDone={refetchAll} />}
+        {bettingOpen && (
+          <DepositPanel
+            marketId={onChainId}
+            onChainIdStr={market.on_chain_id}
+            outcomes={outcomes}
+            lockedOutcome={userOutcome >= 0 ? userOutcome : null}
+            onDone={refetchAll}
+          />
+        )}
 
         <ClaimActions
           status={status}
@@ -159,7 +169,7 @@ export default function MarketDetailPage() {
 
 // ─── Deposit panel ────────────────────────────────────────────────────────────
 
-function DepositPanel({ marketId, onChainIdStr, outcomes, onDone }: { marketId: bigint; onChainIdStr: string; outcomes: string[]; onDone: () => void }) {
+function DepositPanel({ marketId, onChainIdStr, outcomes, lockedOutcome, onDone }: { marketId: bigint; onChainIdStr: string; outcomes: string[]; lockedOutcome: number | null; onDone: () => void }) {
   const { address, isConnected } = useAccount()
   const publicClient = usePublicClient()
   const { writeContractAsync } = useWriteContract()
@@ -168,8 +178,10 @@ function DepositPanel({ marketId, onChainIdStr, outcomes, onDone }: { marketId: 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
+  const selected = lockedOutcome ?? outcome
+
   async function handleDeposit() {
-    if (outcome === null || !address || !publicClient) return
+    if (selected === null || !address || !publicClient) return
     setError('')
     let amountRaw: bigint
     try {
@@ -185,7 +197,7 @@ function DepositPanel({ marketId, onChainIdStr, outcomes, onDone }: { marketId: 
       const approveHash = await writeContractAsync({ address: USDC, abi: erc20Abi, functionName: 'approve', args: [PREDICT_MARKET_CONTRACT, amountRaw] })
       await publicClient.waitForTransactionReceipt({ hash: approveHash })
 
-      const depositHash = await writeContractAsync({ ...BASE, functionName: 'deposit', args: [marketId, outcome, amountRaw] })
+      const depositHash = await writeContractAsync({ ...BASE, functionName: 'deposit', args: [marketId, selected, amountRaw] })
       await publicClient.waitForTransactionReceipt({ hash: depositHash })
 
       // Deposit is confirmed on-chain (the source of truth for claims). Mirror to the DB
@@ -194,7 +206,7 @@ function DepositPanel({ marketId, onChainIdStr, outcomes, onDone }: { marketId: 
         const res = await fetch(`/api/markets/${onChainIdStr}/positions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bettor: address, outcome_index: outcome, amount: amountRaw.toString(), tx_hash: depositHash }),
+          body: JSON.stringify({ bettor: address, outcome_index: selected, amount: amountRaw.toString(), tx_hash: depositHash }),
         })
         if (!res.ok) console.error('position mirror POST failed:', res.status)
       } catch (err) {
@@ -221,32 +233,42 @@ function DepositPanel({ marketId, onChainIdStr, outcomes, onDone }: { marketId: 
 
   return (
     <div style={cardStyle}>
-      <span style={{ fontSize: '0.95rem', fontWeight: 700 }}>Back an outcome</span>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${outcomes.length}, 1fr)`, gap: 8, margin: '14px 0' }}>
-        {outcomes.map((label, i) => {
-          const active = outcome === i
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setOutcome(i)}
-              style={{
-                padding: '12px 8px',
-                borderRadius: 'var(--radius-input)',
-                border: '1px solid',
-                borderColor: active ? outcomeColor(i) : 'var(--color-pop-surface-2)',
-                background: active ? `${outcomeColor(i)}14` : 'var(--color-pop-surface-2)',
-                color: active ? outcomeColor(i) : 'var(--color-pop-text)',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-              }}
-            >
-              {label}
-            </button>
-          )
-        })}
-      </div>
+      <span style={{ fontSize: '0.95rem', fontWeight: 700 }}>
+        {lockedOutcome !== null ? `Add to your ${outcomes[lockedOutcome]} position` : 'Back an outcome'}
+      </span>
+      {lockedOutcome !== null ? (
+        <p style={{ color: 'var(--color-pop-muted)', fontSize: '0.82rem', margin: '10px 0 14px' }}>
+          You are backing{' '}
+          <span style={{ color: outcomeColor(lockedOutcome), fontWeight: 600 }}>{outcomes[lockedOutcome]}</span>. In a
+          pooled market you back one side, more deposits add to it.
+        </p>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${outcomes.length}, 1fr)`, gap: 8, margin: '14px 0' }}>
+          {outcomes.map((label, i) => {
+            const active = outcome === i
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setOutcome(i)}
+                style={{
+                  padding: '12px 8px',
+                  borderRadius: 'var(--radius-input)',
+                  border: '1px solid',
+                  borderColor: active ? outcomeColor(i) : 'var(--color-pop-surface-2)',
+                  background: active ? `${outcomeColor(i)}14` : 'var(--color-pop-surface-2)',
+                  color: active ? outcomeColor(i) : 'var(--color-pop-text)',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                }}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <input
         type="number"
@@ -262,8 +284,8 @@ function DepositPanel({ marketId, onChainIdStr, outcomes, onDone }: { marketId: 
 
       <button
         onClick={handleDeposit}
-        disabled={busy || outcome === null || !amount}
-        style={{ ...ctaStyle, opacity: busy || outcome === null || !amount ? 0.5 : 1, cursor: busy || outcome === null || !amount ? 'not-allowed' : 'pointer' }}
+        disabled={busy || selected === null || !amount}
+        style={{ ...ctaStyle, opacity: busy || selected === null || !amount ? 0.5 : 1, cursor: busy || selected === null || !amount ? 'not-allowed' : 'pointer' }}
       >
         {busy ? 'Depositing…' : 'Approve & deposit'}
       </button>
