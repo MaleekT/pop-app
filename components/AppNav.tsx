@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { label: 'About', href: '/#about' },
   { label: 'FAQ',   href: '/#faq' },
   { label: 'Lobby', href: '/lobby' },
+  { label: 'Predict', href: '/predict' },
 ] as const
 
 export function AppNav() {
