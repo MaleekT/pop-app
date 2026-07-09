@@ -9,6 +9,7 @@ import { CRYPTO_COINS, PRICE_BANDS, HORIZONS, TARGET_OPEN, MAX_CREATES_PER_RUN }
 import type { MarketRow } from '@/lib/markets/db.types'
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_PREDICT_MARKET_CONTRACT!
+const MS_PER_HOUR = 3_600_000
 
 type CryptoTemplateKey = 'crypto_price_above' | 'crypto_price_below'
 
@@ -59,7 +60,7 @@ export function generateCryptoCandidates(args: {
           : Math.round(price * (1 - band.pct))
         if (target <= 0) continue
 
-        const resolveAt = new Date(now + horizon.hours * 3_600_000).toISOString().slice(0, 16) // "YYYY-MM-DDTHH:mm" UTC
+        const resolveAt = new Date(now + horizon.hours * MS_PER_HOUR).toISOString().slice(0, 16) // "YYYY-MM-DDTHH:mm" UTC
         const params: Record<string, string> = {
           coin: coin.id,
           coinName: coin.name,
@@ -210,13 +211,15 @@ export async function runCurator(): Promise<CuratorResult> {
         status: 'Pending',
       })
       if (insErr) {
-        // Market is live on-chain; the DB mirror failed. Log and keep going.
+        // The market is live on-chain but the DB mirror failed. Stop the run rather than
+        // create more markets we can't mirror (bounds orphans during a DB write outage).
         console.error(`curator: DB mirror failed for market ${marketId} (${c.slotKey}):`, insErr.message)
         results.push({ slot: c.slotKey, outcome: 'created-mirror-failed', id: marketId })
-      } else {
-        results.push({ slot: c.slotKey, outcome: 'created', id: marketId })
+        break
       }
+      // Counts only fully live markets (on-chain + mirrored); orphans stay in `results`.
       created++
+      results.push({ slot: c.slotKey, outcome: 'created', id: marketId })
     } catch (err) {
       // First failure is almost always gas exhaustion; stop the run rather than hammer.
       console.error(`curator: createMarket failed for ${c.slotKey}:`, err)
