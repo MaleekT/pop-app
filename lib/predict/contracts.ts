@@ -4,8 +4,9 @@ import { type Address } from 'viem'
 export const USDC = '0x3600000000000000000000000000000000000000' as const satisfies Address
 
 export const PREDICT_MARKET_CONTRACT = process.env.NEXT_PUBLIC_PREDICT_MARKET_CONTRACT as `0x${string}`
+export const PARLAY_CONTRACT = process.env.NEXT_PUBLIC_PARLAY_CONTRACT as `0x${string}`
 
-// Generated from contracts/out/PredictMarket.sol/PredictMarket.json. Do not hand-edit.
+// Generated from the compiled ABIs. Do not hand-edit.
 export const predictMarketAbi = [
   {
     "type": "constructor",
@@ -841,6 +842,477 @@ export const predictMarketAbi = [
   }
 ] as const
 
-// Mirrors PredictMarket.Status enum order. Must stay in sync with the contract.
+export const parlayAbi = [
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "_usdc",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_market",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "MAX_LEGS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_MULTIPLIER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MIN_LEGS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "ODDS_SCALE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "USDC",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IERC20"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "buyTicket",
+    "inputs": [
+      {
+        "name": "picks",
+        "type": "tuple[]",
+        "internalType": "struct Parlay.Leg[]",
+        "components": [
+          {
+            "name": "marketId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "outcome",
+            "type": "uint8",
+            "internalType": "uint8"
+          }
+        ]
+      },
+      {
+        "name": "stake",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "fundHouse",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint128",
+        "internalType": "uint128"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getLegs",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct Parlay.Leg[]",
+        "components": [
+          {
+            "name": "marketId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "outcome",
+            "type": "uint8",
+            "internalType": "uint8"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "houseAvailable",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "houseBalance",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "market",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract PredictMarket"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "nextId",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "quote",
+    "inputs": [
+      {
+        "name": "picks",
+        "type": "tuple[]",
+        "internalType": "struct Parlay.Leg[]",
+        "components": [
+          {
+            "name": "marketId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "outcome",
+            "type": "uint8",
+            "internalType": "uint8"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "multiplier",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "settle",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "tickets",
+    "inputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "bettor",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "stake",
+        "type": "uint128",
+        "internalType": "uint128"
+      },
+      {
+        "name": "lockedMultiplier",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "status",
+        "type": "uint8",
+        "internalType": "enum Parlay.Status"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "totalReserved",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "HouseFunded",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "houseBalance",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TicketBought",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "bettor",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "stake",
+        "type": "uint128",
+        "indexed": false,
+        "internalType": "uint128"
+      },
+      {
+        "name": "multiplier",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "legs",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TicketSettled",
+    "inputs": [
+      {
+        "name": "id",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "status",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum Parlay.Status"
+      },
+      {
+        "name": "payout",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "BadLegCount",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BadOutcome",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DuplicateMarket",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientHouse",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LegNotTerminal",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MarketNotOpen",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "WrongStatus",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroStake",
+    "inputs": []
+  }
+] as const
+
+// Mirrors PredictMarket.Status enum order.
 export const MARKET_STATUS = ['Pending', 'Proposed', 'Challenged', 'Resolved', 'Voided'] as const
 export type MarketStatus = (typeof MARKET_STATUS)[number]
+
+// Mirrors Parlay.Status enum order.
+export const PARLAY_STATUS = ['Open', 'Won', 'Lost', 'Refunded'] as const
+export type ParlayStatus = (typeof PARLAY_STATUS)[number]

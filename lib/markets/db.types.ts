@@ -40,6 +40,25 @@ export interface MarketVoidEvidenceJson {
   fetchedAt: string
 }
 
+export type ParlayStatusDb = 'Open' | 'Won' | 'Lost' | 'Refunded'
+
+export interface ParlayLeg {
+  marketOnChainId: string
+  outcomeIndex: number
+}
+
+export interface ParlayRow {
+  id: number
+  on_chain_id: string
+  contract_address: string
+  bettor: string
+  stake: string
+  locked_multiplier: string
+  legs: ParlayLeg[]
+  status: ParlayStatusDb
+  created_at: string
+}
+
 export interface MarketsDatabase {
   public: {
     Tables: {
@@ -52,6 +71,11 @@ export interface MarketsDatabase {
         Row: MarketPositionRow
         Insert: Omit<MarketPositionRow, 'id' | 'created_at'>
         Update: Partial<Omit<MarketPositionRow, 'id' | 'created_at'>>
+      }
+      parlays: {
+        Row: ParlayRow
+        Insert: Omit<ParlayRow, 'id' | 'created_at'>
+        Update: Partial<Omit<ParlayRow, 'id' | 'created_at'>>
       }
     }
   }

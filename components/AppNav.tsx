@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { label: 'FAQ',   href: '/#faq' },
   { label: 'Lobby', href: '/lobby' },
   { label: 'Predict', href: '/predict' },
+  { label: 'Parlay', href: '/parlay' },
 ] as const
 
 export function AppNav() {
