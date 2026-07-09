@@ -56,6 +56,7 @@ export default function ParlayTicketPage() {
       const hash = await writeContractAsync({ address: PARLAY_CONTRACT, abi: parlayAbi, functionName: 'settle', args: [BigInt(parlay.on_chain_id)] })
       const receipt = await publicClient.waitForTransactionReceipt({ hash })
       const [log] = parseEventLogs({ abi: parlayAbi, eventName: 'TicketSettled', logs: receipt.logs })
+      if (!log) throw new Error('Ticket settled on-chain, but its result could not be read from the receipt.')
       const finalStatus = PARLAY_STATUS[Number(log.args.status)] ?? 'Open'
       try {
         await fetch(`/api/parlays/${parlay.on_chain_id}`, {
@@ -89,6 +90,8 @@ export default function ParlayTicketPage() {
   const stake = BigInt(parlay.stake)
   const mult = BigInt(parlay.locked_multiplier)
   const payout = (stake * mult) / ODDS_SCALE
+  const payoutLabel = parlay.status === 'Open' ? 'Potential payout' : 'Payout'
+  const shownPayout = parlay.status === 'Lost' ? 0n : parlay.status === 'Refunded' ? stake : payout
 
   return (
     <>
@@ -103,7 +106,7 @@ export default function ParlayTicketPage() {
         <div style={{ ...cardStyle, marginBottom: 20, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div><span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem', display: 'block' }}>Stake</span><span style={{ fontWeight: 600 }}><UsdcAmount amount={stake} /></span></div>
           <div><span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem', display: 'block' }}>Multiplier</span><span style={{ fontWeight: 700, color: 'var(--color-pop-accent)' }}>{(Number(mult) / 1e6).toFixed(2)}x</span></div>
-          <div><span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem', display: 'block' }}>Potential payout</span><span style={{ fontWeight: 700, color: 'var(--color-pop-win)' }}><UsdcAmount amount={payout} /></span></div>
+          <div><span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem', display: 'block' }}>{payoutLabel}</span><span style={{ fontWeight: 700, color: 'var(--color-pop-win)' }}><UsdcAmount amount={shownPayout} /></span></div>
         </div>
 
         <div style={{ ...cardStyle, marginBottom: 20 }}>

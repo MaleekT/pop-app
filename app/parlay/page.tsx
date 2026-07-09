@@ -77,6 +77,7 @@ export default function ParlayPage() {
       const buyHash = await writeContractAsync({ address: PARLAY_CONTRACT, abi: parlayAbi, functionName: 'buyTicket', args: [legs, stakeRaw] })
       const receipt = await publicClient.waitForTransactionReceipt({ hash: buyHash })
       const [log] = parseEventLogs({ abi: parlayAbi, eventName: 'TicketBought', logs: receipt.logs })
+      if (!log) throw new Error('Ticket bought on-chain, but its confirmation could not be read from the receipt.')
       const ticketId = log.args.id.toString()
 
       try {
