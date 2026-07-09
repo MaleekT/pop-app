@@ -43,3 +43,21 @@ export async function resolve(input: MarketResolveInput): Promise<MarketResolveR
     fetchedAt: new Date().toISOString(),
   }
 }
+
+// Current USD spot price for a CoinGecko coin id, or null if unavailable. Shared with
+// the autonomous curator so both price reads use the same source and response shape.
+export async function fetchSpotPrice(coin: string): Promise<number | null> {
+  const url = `${COINGECKO_BASE}/simple/price?ids=${encodeURIComponent(coin)}&vs_currencies=usd`
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!res.ok) return null
+    const data: CoinGeckoPrice = await res.json()
+    const price = data[coin]?.usd
+    return price == null ? null : price
+  } catch {
+    return null
+  }
+}

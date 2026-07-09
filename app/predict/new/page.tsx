@@ -10,6 +10,7 @@ import { AppNav } from '@/components/AppNav'
 import { TEMPLATES, type TemplateKey } from '@/lib/templates'
 import { PREDICT_MARKET_CONTRACT, predictMarketAbi } from '@/lib/predict/contracts'
 import { backBtnStyle, ctaStyle, inputStyle, friendlyTxError, categoryLabel } from '@/components/predict/ui'
+import { asUTC, categoryFor, deriveOutcomes, marketDefinition } from '@/lib/markets/definition'
 
 const TEMPLATE_ORDER: TemplateKey[] = [
   'crypto_price_above',
@@ -23,40 +24,6 @@ const TEMPLATE_ORDER: TemplateKey[] = [
 // Fields the market form does not collect: 1v1-only picks and the fixed over/under
 // direction (a market covers both sides), plus resolveAt which is its own control.
 const SKIP_FIELDS = new Set(['pickedTeam', 'creatorOutcome', 'direction', 'resolveAt'])
-
-function asUTC(datetimeLocal: string): Date {
-  return new Date(datetimeLocal + ':00Z')
-}
-
-function categoryFor(key: TemplateKey): string {
-  if (key.startsWith('crypto_price')) return 'crypto'
-  if (key.startsWith('sports')) return 'sports'
-  return 'youtube'
-}
-
-// Outcome slot labels, index-aligned with the engines (0 = Yes/Home/Over).
-function deriveOutcomes(key: TemplateKey, p: Record<string, string>): string[] {
-  if (key === 'sports_winner') return [p.homeTeam || 'Home', p.awayTeam || 'Away', 'Draw']
-  if (key === 'sports_score') return ['Over', 'Under']
-  return ['Yes', 'No']
-}
-
-// Human-readable market question. The engines resolve from params, not this text,
-// so phrasing is display-only (tamper-proofed by its keccak256 hash).
-function marketDefinition(key: TemplateKey, p: Record<string, string>): string {
-  const coin = p.coinName || p.coin || 'the coin'
-  const home = p.homeTeam || 'Home'
-  const away = p.awayTeam || 'Away'
-  switch (key) {
-    case 'crypto_price_above': return `Will ${coin} be ABOVE $${p.target} at ${p.resolveAt} UTC? (CoinGecko)`
-    case 'crypto_price_below': return `Will ${coin} be BELOW $${p.target} at ${p.resolveAt} UTC? (CoinGecko)`
-    case 'sports_winner':      return `${home} vs ${away}: who wins? (${p.sport || 'sports'} fixture ${p.fixtureId})`
-    case 'sports_score':       return `${home} vs ${away}: total ${p.sport === 'basketball' ? 'points' : 'goals'} over or under ${p.target}?`
-    case 'youtube_views':      return `Will YouTube video ${p.videoId} reach ${p.target} views by ${p.resolveAt} UTC?`
-    case 'youtube_subs':       return `Will YouTube channel ${p.channelId} reach ${p.target} subscribers by ${p.resolveAt} UTC?`
-    default:                   return 'Prediction market'
-  }
-}
 
 export default function NewMarketPage() {
   const router = useRouter()
