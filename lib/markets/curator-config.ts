@@ -47,16 +47,19 @@ export const TARGET_OPEN_PER_COIN = 2
 export const MAX_CREATES_PER_RUN = 3
 
 // ── Sports ───────────────────────────────────────────────────────────────────
-// A handful of well-known teams to auto-list upcoming matches for. tsdbId is the
-// TheSportsDB team id (same source the resolver uses); add or remove freely. These are
-// league clubs, so their fixtures are almost always draw-eligible 3-way matches.
+// Teams to auto-list upcoming matches for. tsdbId is the TheSportsDB team id (same source
+// the resolver uses); add or remove freely. A mix of national sides (active during summer
+// tournaments like the 2026 World Cup), clubs (domestic season) and NBA (Oct–Jun), so some
+// always have fixtures whatever the season.
 export const SPORTS_FOLLOW: FollowedTeam[] = [
+  { name: 'Spain', tsdbId: '133909', sport: 'football' },
+  { name: 'Brazil', tsdbId: '134496', sport: 'football' },
+  { name: 'Argentina', tsdbId: '134509', sport: 'football' },
+  { name: 'France', tsdbId: '133913', sport: 'football' },
+  { name: 'England', tsdbId: '133914', sport: 'football' },
+  { name: 'Portugal', tsdbId: '133908', sport: 'football' },
   { name: 'Real Madrid', tsdbId: '133738', sport: 'football' },
-  { name: 'Barcelona', tsdbId: '133739', sport: 'football' },
   { name: 'Manchester City', tsdbId: '133613', sport: 'football' },
-  { name: 'Manchester United', tsdbId: '133612', sport: 'football' },
-  { name: 'Liverpool', tsdbId: '133602', sport: 'football' },
-  { name: 'Arsenal', tsdbId: '133604', sport: 'football' },
   { name: 'Los Angeles Lakers', tsdbId: '134867', sport: 'basketball' },
   { name: 'Boston Celtics', tsdbId: '134860', sport: 'basketball' },
 ]

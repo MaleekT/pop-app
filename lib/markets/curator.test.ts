@@ -145,7 +145,7 @@ describe('generateSportsCandidates', () => {
     expect(c.category).toBe('sports')
     expect(c.templateKey).toBe('sports_winner')
     expect(c.params.fixtureId).toBe('tsdb:1')
-    expect(c.outcomes).toEqual(['Real Madrid', 'Barcelona', 'Draw'])
+    expect(c.outcomes).toEqual(['Real Madrid', 'Barcelona']) // 2-way "draw no bet"
     expect(c.definitionText).toBe('Real Madrid vs Barcelona: who wins? (football fixture tsdb:1)')
     expect(c.definitionHash).toBe(keccak256(toHex(c.definitionText)))
     expect(c.params.resolveAt).toBe(new Date(NOW + 27 * 3_600_000).toISOString().slice(0, 16)) // kickoff + 3h

@@ -180,7 +180,10 @@ export function generateSportsCandidates(args: {
       awayTeam: f.awayTeam,
       resolveAt: new Date(resolveMs).toISOString().slice(0, 16),
     }
-    const outcomes = deriveOutcomes('sports_winner', params)
+    // 2-way "draw no bet": a drawn match voids and refunds (the resolver voids a draw in a
+    // 2-outcome market). Safe for knockout ties decided on penalties, which a 3-way market
+    // would otherwise mis-resolve to Draw since the engine reads the 90-minute score.
+    const outcomes = [f.homeTeam, f.awayTeam]
     const definitionText = marketDefinition('sports_winner', params)
     used.add(f.id)
     out.push({
