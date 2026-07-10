@@ -23,10 +23,13 @@ export const CRYPTO_COINS: CryptoCoin[] = [
   { id: 'solana', name: 'Solana' },
 ]
 
+// Ordered so directions alternate — the curator walks this list, so alternating
+// entries yield opposite-direction markets instead of a run of "above" bets.
 export const PRICE_BANDS: PriceBand[] = [
   { label: 'up5', direction: 'above', pct: 0.05 },
-  { label: 'up10', direction: 'above', pct: 0.10 },
   { label: 'down5', direction: 'below', pct: 0.05 },
+  { label: 'up10', direction: 'above', pct: 0.10 },
+  { label: 'down10', direction: 'below', pct: 0.10 },
 ]
 
 export const HORIZONS: Horizon[] = [
@@ -35,7 +38,8 @@ export const HORIZONS: Horizon[] = [
   { label: '7d', hours: 168 },
 ]
 
-// How many OPEN markets to keep alive per category, and the hard per-run creation cap
-// (a bad config or price glitch can never spam more than this many per run).
-export const TARGET_OPEN: Record<string, number> = { crypto: 6 }
+// How many OPEN markets to keep alive PER COIN (so the board stays balanced across coins
+// instead of filling up with one), and the hard per-run creation cap (a bad config or
+// price glitch can never spam more than this many markets in a single run).
+export const TARGET_OPEN_PER_COIN = 2
 export const MAX_CREATES_PER_RUN = 3

@@ -4,6 +4,7 @@ import { cryptoSlotKey, generateCryptoCandidates } from './curator'
 
 // Fixed clock so resolveAt strings are deterministic.
 const NOW = Date.UTC(2026, 6, 10, 12, 0, 0) // 2026-07-10T12:00:00Z
+const ALL_PRICES = { bitcoin: 100_000, ethereum: 4_000, solana: 200 }
 
 describe('cryptoSlotKey', () => {
   it('joins identity parts with pipes', () => {
@@ -12,31 +13,60 @@ describe('cryptoSlotKey', () => {
 })
 
 describe('generateCryptoCandidates', () => {
-  it('fills the first slots for the first coin and respects the limit', () => {
+  it('spreads across coins and directions instead of filling one coin', () => {
     const candidates = generateCryptoCandidates({
-      prices: { bitcoin: 100_000, ethereum: 4_000, solana: 200 },
+      prices: ALL_PRICES,
       existingSlotKeys: new Set(),
+      openCountByCoin: {},
       now: NOW,
       limit: 3,
     })
 
     expect(candidates).toHaveLength(3)
-    expect(candidates.every((c) => c.params.coin === 'bitcoin')).toBe(true)
-    expect(candidates.map((c) => c.slotKey)).toEqual([
-      'bitcoin|crypto_price_above|up5|24h',
-      'bitcoin|crypto_price_above|up5|3d',
-      'bitcoin|crypto_price_above|up5|7d',
-    ])
+    // One market per coin — the whole point of the diversity fix (was all-Bitcoin before).
+    expect(new Set(candidates.map((c) => c.params.coin))).toEqual(new Set(['bitcoin', 'ethereum', 'solana']))
+    // And not all "above".
+    expect(new Set(candidates.map((c) => c.templateKey)).size).toBeGreaterThan(1)
+  })
+
+  it('respects the per-coin target (2 per coin) across a large limit', () => {
+    const candidates = generateCryptoCandidates({
+      prices: ALL_PRICES,
+      existingSlotKeys: new Set(),
+      openCountByCoin: {},
+      now: NOW,
+      limit: 99,
+    })
+
+    expect(candidates).toHaveLength(6) // 3 coins × 2
+    for (const coin of ['bitcoin', 'ethereum', 'solana']) {
+      expect(candidates.filter((c) => c.params.coin === coin)).toHaveLength(2)
+    }
+  })
+
+  it('creates nothing for a coin already at its per-coin target', () => {
+    const candidates = generateCryptoCandidates({
+      prices: ALL_PRICES,
+      existingSlotKeys: new Set(),
+      openCountByCoin: { bitcoin: 2 },
+      now: NOW,
+      limit: 99,
+    })
+
+    expect(candidates.some((c) => c.params.coin === 'bitcoin')).toBe(false)
+    expect(candidates).toHaveLength(4) // ethereum 2 + solana 2
   })
 
   it('computes the ABOVE target, outcomes, resolveAt, and a matching hash', () => {
     const [c] = generateCryptoCandidates({
       prices: { bitcoin: 100_000 },
       existingSlotKeys: new Set(),
+      openCountByCoin: {},
       now: NOW,
       limit: 1,
     })
 
+    expect(c.params.coin).toBe('bitcoin')
     expect(c.templateKey).toBe('crypto_price_above')
     expect(c.params.target).toBe('105000') // round(100000 * 1.05)
     expect(c.params.coinName).toBe('Bitcoin')
@@ -48,29 +78,30 @@ describe('generateCryptoCandidates', () => {
     expect(c.definitionHash).toBe(keccak256(toHex(c.definitionText)))
   })
 
-  it('skips slots that already exist', () => {
+  it('skips a slot that already exists and moves to the coin’s next one', () => {
     const candidates = generateCryptoCandidates({
       prices: { bitcoin: 100_000 },
       existingSlotKeys: new Set(['bitcoin|crypto_price_above|up5|24h']),
+      openCountByCoin: {},
       now: NOW,
-      limit: 3,
+      limit: 1,
     })
 
-    expect(candidates.map((c) => c.slotKey)).not.toContain('bitcoin|crypto_price_above|up5|24h')
-    expect(candidates).toHaveLength(3)
+    expect(candidates).toHaveLength(1)
+    expect(candidates[0].slotKey).toBe('bitcoin|crypto_price_below|down5|24h') // next slot for bitcoin
   })
 
   it('emits BELOW markets with a discounted target', () => {
     const candidates = generateCryptoCandidates({
       prices: { bitcoin: 100_000 },
       existingSlotKeys: new Set(),
+      openCountByCoin: {},
       now: NOW,
-      limit: 9,
+      limit: 2,
     })
 
-    const below = candidates.find((c) => c.slotKey === 'bitcoin|crypto_price_below|down5|24h')
+    const below = candidates.find((c) => c.templateKey === 'crypto_price_below')
     expect(below).toBeDefined()
-    expect(below?.templateKey).toBe('crypto_price_below')
     expect(below?.params.target).toBe('95000') // round(100000 * 0.95)
   })
 
@@ -78,6 +109,7 @@ describe('generateCryptoCandidates', () => {
     const candidates = generateCryptoCandidates({
       prices: { bitcoin: 0, ethereum: 4_000 },
       existingSlotKeys: new Set(),
+      openCountByCoin: {},
       now: NOW,
       limit: 3,
     })
@@ -87,7 +119,7 @@ describe('generateCryptoCandidates', () => {
   })
 
   it('returns nothing when the limit is zero or negative', () => {
-    const args = { prices: { bitcoin: 100_000 }, existingSlotKeys: new Set<string>(), now: NOW }
+    const args = { prices: { bitcoin: 100_000 }, existingSlotKeys: new Set<string>(), openCountByCoin: {}, now: NOW }
     expect(generateCryptoCandidates({ ...args, limit: 0 })).toEqual([])
     expect(generateCryptoCandidates({ ...args, limit: -5 })).toEqual([])
   })
