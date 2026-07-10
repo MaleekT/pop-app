@@ -5,10 +5,11 @@ import { createMarketsClient } from '@/lib/markets/supabase'
 import { PREDICT_MARKET_CONTRACT, predictMarketAbi, USDC } from '@/lib/predict/contracts'
 import { fetchSpotPrice } from '@/lib/markets/engines/crypto-price'
 import { marketDefinition, deriveOutcomes, asUTC } from '@/lib/markets/definition'
-import { CRYPTO_COINS, PRICE_BANDS, HORIZONS, TARGET_OPEN_PER_COIN, MAX_CREATES_PER_RUN, type CryptoCoin, type PriceBand, type Horizon } from '@/lib/markets/curator-config'
+import { CRYPTO_COINS, PRICE_BANDS, HORIZONS, TARGET_OPEN_PER_COIN, MAX_CREATES_PER_RUN, SPORTS_FOLLOW, TARGET_OPEN_SPORTS, FIXTURES_PER_TEAM, type CryptoCoin, type PriceBand, type Horizon } from '@/lib/markets/curator-config'
 import type { MarketRow } from '@/lib/markets/db.types'
 import { erc20Abi } from '@/lib/contracts'
 import { SEED_PER_OUTCOME } from '@/lib/markets/bankroll-config'
+import { fetchUpcomingFixtures, type UpcomingFixture } from '@/lib/markets/engines/sports-fixtures'
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_PREDICT_MARKET_CONTRACT!
 const MS_PER_HOUR = 3_600_000
@@ -20,6 +21,18 @@ export interface CryptoCandidate {
   category: 'crypto'
   slotKey: string                    // stable logical identity for dedup across runs
   params: Record<string, string>     // coin, coinName, target, resolveAt, band, horizon
+  outcomes: string[]
+  definitionText: string
+  definitionHash: `0x${string}`
+}
+
+// A ready-to-create market spec from any category (crypto or sports). The create + seed
+// loop is category-agnostic and works off this shape (CryptoCandidate is assignable to it).
+export interface MarketCandidate {
+  category: string
+  templateKey: string
+  slotKey: string
+  params: Record<string, string>
   outcomes: string[]
   definitionText: string
   definitionHash: `0x${string}`
@@ -137,6 +150,52 @@ function nextCandidate(
   return null
 }
 
+const SPORTS_RESOLVE_BUFFER_MS = 3 * MS_PER_HOUR // resolve 3h after kick-off (match + buffer)
+
+// Pure generation: turns upcoming fixtures into 3-way sports_winner market specs, skipping
+// fixtures already listed or whose resolve time is past. Deterministic and side-effect free.
+export function generateSportsCandidates(args: {
+  fixtures: UpcomingFixture[]
+  existingFixtureIds: Set<string>
+  now: number
+  limit: number
+}): MarketCandidate[] {
+  const { fixtures, existingFixtureIds, now, limit } = args
+  const out: MarketCandidate[] = []
+  if (limit <= 0) return out
+  const used = new Set(existingFixtureIds)
+
+  for (const f of fixtures) {
+    if (out.length >= limit) break
+    if (used.has(f.id)) continue
+    const kickoff = Date.parse(f.date)
+    if (isNaN(kickoff)) continue
+    const resolveMs = kickoff + SPORTS_RESOLVE_BUFFER_MS
+    if (resolveMs <= now) continue
+
+    const params: Record<string, string> = {
+      sport: f.sport,
+      fixtureId: f.id,
+      homeTeam: f.homeTeam,
+      awayTeam: f.awayTeam,
+      resolveAt: new Date(resolveMs).toISOString().slice(0, 16),
+    }
+    const outcomes = deriveOutcomes('sports_winner', params)
+    const definitionText = marketDefinition('sports_winner', params)
+    used.add(f.id)
+    out.push({
+      category: 'sports',
+      templateKey: 'sports_winner',
+      slotKey: `sports|${f.id}`,
+      params,
+      outcomes,
+      definitionText,
+      definitionHash: keccak256(toHex(definitionText)),
+    })
+  }
+  return out
+}
+
 interface CuratorLog {
   slot: string
   outcome: string
@@ -177,7 +236,16 @@ function openCryptoCountByCoin(open: MarketRow[]): Record<string, number> {
   return counts
 }
 
-// Keeps the target number of open crypto markets alive. Reuses the owner=resolver
+// Fixture ids already listed as open sports markets, so generation can skip them.
+function openSportsFixtureIds(open: MarketRow[]): Set<string> {
+  const ids = new Set<string>()
+  for (const m of open) {
+    if (m.category === 'sports' && m.params?.fixtureId) ids.add(m.params.fixtureId)
+  }
+  return ids
+}
+
+// Keeps a target number of open markets (crypto + sports) alive. Reuses the owner=resolver
 // wallet (createMarket is onlyOwner, and that key already auto-signs resolution txs),
 // so no new trust surface. Rate limited, idempotent (dedup by slot), and isolated.
 export async function runCurator(): Promise<CuratorResult> {
@@ -223,29 +291,44 @@ export async function runCurator(): Promise<CuratorResult> {
   if (openErr) throw new Error(openErr.message)
   const open = (openData ?? []) as MarketRow[]
 
-  // Skip only when EVERY coin is at its per-coin target — a board full of one coin must
-  // still let the others fill (that imbalance is exactly what this phase fixes).
+  // ── Crypto candidates (only when some coin is below its per-coin target) ──
   const openByCoin = openCryptoCountByCoin(open)
-  if (CRYPTO_COINS.every((c) => (openByCoin[c.id] ?? 0) >= TARGET_OPEN_PER_COIN)) {
-    return { created: 0, results: [{ slot: '-', outcome: 'crypto-at-target' }] }
+  let cryptoCandidates: MarketCandidate[] = []
+  if (!CRYPTO_COINS.every((c) => (openByCoin[c.id] ?? 0) >= TARGET_OPEN_PER_COIN)) {
+    const prices: Record<string, number> = {}
+    for (const coin of CRYPTO_COINS) {
+      const price = await fetchSpotPrice(coin.id)
+      if (price != null) prices[coin.id] = price
+    }
+    cryptoCandidates = generateCryptoCandidates({
+      prices,
+      existingSlotKeys: openCryptoSlotKeys(open),
+      openCountByCoin: openByCoin,
+      now: Date.now(),
+      limit: MAX_CREATES_PER_RUN,
+    })
   }
 
-  // Guards passed and we intend to create — build the signing client once.
+  // ── Sports candidates (only when below the open-sports target) ──
+  let sportsCandidates: MarketCandidate[] = []
+  const openSports = open.filter((m) => m.category === 'sports').length
+  if (SPORTS_FOLLOW.length > 0 && openSports < TARGET_OPEN_SPORTS) {
+    const fixtures = await fetchUpcomingFixtures(SPORTS_FOLLOW, FIXTURES_PER_TEAM)
+    sportsCandidates = generateSportsCandidates({
+      fixtures,
+      existingFixtureIds: openSportsFixtureIds(open),
+      now: Date.now(),
+      limit: TARGET_OPEN_SPORTS - openSports,
+    })
+  }
+
+  const candidates = [...cryptoCandidates, ...sportsCandidates].slice(0, MAX_CREATES_PER_RUN)
+  if (candidates.length === 0) {
+    return { created: 0, results: [{ slot: '-', outcome: 'nothing-to-create' }] }
+  }
+
+  // Guards passed and we have work — build the signing client once.
   const walletClient = createWalletClient({ account, chain: arcTestnet, transport: http(rpc) })
-
-  const prices: Record<string, number> = {}
-  for (const coin of CRYPTO_COINS) {
-    const price = await fetchSpotPrice(coin.id)
-    if (price != null) prices[coin.id] = price
-  }
-
-  const candidates = generateCryptoCandidates({
-    prices,
-    existingSlotKeys: openCryptoSlotKeys(open),
-    openCountByCoin: openByCoin,
-    now: Date.now(),
-    limit: MAX_CREATES_PER_RUN,
-  })
 
   const results: CuratorLog[] = []
   const seedTargets: { id: bigint; outcomeCount: number }[] = []

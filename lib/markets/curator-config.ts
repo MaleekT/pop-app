@@ -1,6 +1,8 @@
 // Tunable knobs for the autonomous market curator (Option B). Plain constants — edit
 // and redeploy to retune. No secrets here. See docs/predict-auto-curator-spec.md.
 
+import type { FollowedTeam } from '@/lib/markets/engines/sports-fixtures'
+
 export interface CryptoCoin {
   id: string   // CoinGecko id, also stored as params.coin and read by the resolver engine
   name: string // display name, stored as params.coinName
@@ -43,3 +45,21 @@ export const HORIZONS: Horizon[] = [
 // price glitch can never spam more than this many markets in a single run).
 export const TARGET_OPEN_PER_COIN = 2
 export const MAX_CREATES_PER_RUN = 3
+
+// ── Sports ───────────────────────────────────────────────────────────────────
+// A handful of well-known teams to auto-list upcoming matches for. tsdbId is the
+// TheSportsDB team id (same source the resolver uses); add or remove freely. These are
+// league clubs, so their fixtures are almost always draw-eligible 3-way matches.
+export const SPORTS_FOLLOW: FollowedTeam[] = [
+  { name: 'Real Madrid', tsdbId: '133738', sport: 'football' },
+  { name: 'Barcelona', tsdbId: '133739', sport: 'football' },
+  { name: 'Manchester City', tsdbId: '133613', sport: 'football' },
+  { name: 'Manchester United', tsdbId: '133612', sport: 'football' },
+  { name: 'Liverpool', tsdbId: '133602', sport: 'football' },
+  { name: 'Arsenal', tsdbId: '133604', sport: 'football' },
+  { name: 'Los Angeles Lakers', tsdbId: '134867', sport: 'basketball' },
+  { name: 'Boston Celtics', tsdbId: '134860', sport: 'basketball' },
+]
+
+export const TARGET_OPEN_SPORTS = 4 // how many open sports markets to keep alive
+export const FIXTURES_PER_TEAM = 2  // inspect each followed team's next N fixtures

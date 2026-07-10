@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { keccak256, toHex } from 'viem'
-import { cryptoSlotKey, generateCryptoCandidates } from './curator'
+import { cryptoSlotKey, generateCryptoCandidates, generateSportsCandidates } from './curator'
 
 // Fixed clock so resolveAt strings are deterministic.
 const NOW = Date.UTC(2026, 6, 10, 12, 0, 0) // 2026-07-10T12:00:00Z
@@ -122,5 +122,53 @@ describe('generateCryptoCandidates', () => {
     const args = { prices: { bitcoin: 100_000 }, existingSlotKeys: new Set<string>(), openCountByCoin: {}, now: NOW }
     expect(generateCryptoCandidates({ ...args, limit: 0 })).toEqual([])
     expect(generateCryptoCandidates({ ...args, limit: -5 })).toEqual([])
+  })
+})
+
+describe('generateSportsCandidates', () => {
+  const fixture = (id: string, home: string, away: string, hoursOut: number, sport: 'football' | 'basketball' = 'football') => ({
+    id,
+    homeTeam: home,
+    awayTeam: away,
+    sport,
+    date: new Date(NOW + hoursOut * 3_600_000).toISOString(),
+  })
+
+  it('builds a 3-way sports_winner market resolving 3h after kick-off', () => {
+    const [c] = generateSportsCandidates({
+      fixtures: [fixture('tsdb:1', 'Real Madrid', 'Barcelona', 24)],
+      existingFixtureIds: new Set(),
+      now: NOW,
+      limit: 5,
+    })
+
+    expect(c.category).toBe('sports')
+    expect(c.templateKey).toBe('sports_winner')
+    expect(c.params.fixtureId).toBe('tsdb:1')
+    expect(c.outcomes).toEqual(['Real Madrid', 'Barcelona', 'Draw'])
+    expect(c.definitionText).toBe('Real Madrid vs Barcelona: who wins? (football fixture tsdb:1)')
+    expect(c.definitionHash).toBe(keccak256(toHex(c.definitionText)))
+    expect(c.params.resolveAt).toBe(new Date(NOW + 27 * 3_600_000).toISOString().slice(0, 16)) // kickoff + 3h
+  })
+
+  it('skips fixtures already listed and respects the limit', () => {
+    const out = generateSportsCandidates({
+      fixtures: [fixture('tsdb:1', 'A', 'B', 24), fixture('tsdb:2', 'C', 'D', 24), fixture('tsdb:3', 'E', 'F', 24)],
+      existingFixtureIds: new Set(['tsdb:1']),
+      now: NOW,
+      limit: 1,
+    })
+    expect(out).toHaveLength(1)
+    expect(out[0].params.fixtureId).toBe('tsdb:2')
+  })
+
+  it('skips fixtures whose kick-off + 3h is already past', () => {
+    const out = generateSportsCandidates({
+      fixtures: [fixture('tsdb:1', 'A', 'B', -6)],
+      existingFixtureIds: new Set(),
+      now: NOW,
+      limit: 5,
+    })
+    expect(out).toHaveLength(0)
   })
 })
