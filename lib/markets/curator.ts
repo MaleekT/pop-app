@@ -221,8 +221,10 @@ export async function runCurator(): Promise<CuratorResult> {
   if (openErr) throw new Error(openErr.message)
   const open = (openData ?? []) as MarketRow[]
 
-  const openCryptoCount = open.filter((m) => m.category === 'crypto').length
-  if (openCryptoCount >= CRYPTO_COINS.length * TARGET_OPEN_PER_COIN) {
+  // Skip only when EVERY coin is at its per-coin target — a board full of one coin must
+  // still let the others fill (that imbalance is exactly what this phase fixes).
+  const openByCoin = openCryptoCountByCoin(open)
+  if (CRYPTO_COINS.every((c) => (openByCoin[c.id] ?? 0) >= TARGET_OPEN_PER_COIN)) {
     return { created: 0, results: [{ slot: '-', outcome: 'crypto-at-target' }] }
   }
 
@@ -238,7 +240,7 @@ export async function runCurator(): Promise<CuratorResult> {
   const candidates = generateCryptoCandidates({
     prices,
     existingSlotKeys: openCryptoSlotKeys(open),
-    openCountByCoin: openCryptoCountByCoin(open),
+    openCountByCoin: openByCoin,
     now: Date.now(),
     limit: MAX_CREATES_PER_RUN,
   })
