@@ -2,11 +2,13 @@ import { createWalletClient, createPublicClient, http, keccak256, toHex, parseEv
 import { privateKeyToAccount } from 'viem/accounts'
 import { arcTestnet } from 'viem/chains'
 import { createMarketsClient } from '@/lib/markets/supabase'
-import { PREDICT_MARKET_CONTRACT, predictMarketAbi } from '@/lib/predict/contracts'
+import { PREDICT_MARKET_CONTRACT, predictMarketAbi, USDC } from '@/lib/predict/contracts'
 import { fetchSpotPrice } from '@/lib/markets/engines/crypto-price'
 import { marketDefinition, deriveOutcomes, asUTC } from '@/lib/markets/definition'
 import { CRYPTO_COINS, PRICE_BANDS, HORIZONS, TARGET_OPEN_PER_COIN, MAX_CREATES_PER_RUN, type CryptoCoin, type PriceBand, type Horizon } from '@/lib/markets/curator-config'
 import type { MarketRow } from '@/lib/markets/db.types'
+import { erc20Abi } from '@/lib/contracts'
+import { SEED_PER_OUTCOME } from '@/lib/markets/bankroll-config'
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_PREDICT_MARKET_CONTRACT!
 const MS_PER_HOUR = 3_600_000
@@ -246,6 +248,7 @@ export async function runCurator(): Promise<CuratorResult> {
   })
 
   const results: CuratorLog[] = []
+  const seedTargets: { id: bigint; outcomeCount: number }[] = []
   let created = 0
 
   for (const c of candidates) {
@@ -287,12 +290,45 @@ export async function runCurator(): Promise<CuratorResult> {
       }
       // Counts only fully live markets (on-chain + mirrored); orphans stay in `results`.
       created++
+      seedTargets.push({ id: BigInt(marketId), outcomeCount: c.outcomes.length })
       results.push({ slot: c.slotKey, outcome: 'created', id: marketId })
     } catch (err) {
       // First failure is almost always gas exhaustion; stop the run rather than hammer.
       console.error(`curator: createMarket failed for ${c.slotKey}:`, err)
       results.push({ slot: c.slotKey, outcome: 'tx-failed' })
       break
+    }
+  }
+
+  // Seed every created market on all outcomes so no pool is empty — the parlay multiplier
+  // then reflects real odds and grows with legs instead of maxing at 50x on empty pools.
+  const seeds = seedTargets.flatMap((t) =>
+    Array.from({ length: t.outcomeCount }, (_, o) => ({ id: t.id, outcome: o })),
+  )
+  if (seeds.length > 0) {
+    const seedTotal = SEED_PER_OUTCOME * BigInt(seeds.length)
+    let seeded = 0
+    try {
+      const approveHash = await walletClient.writeContract({
+        address: USDC, abi: erc20Abi, functionName: 'approve', args: [PREDICT_MARKET_CONTRACT, seedTotal],
+      })
+      await publicClient.waitForTransactionReceipt({ hash: approveHash })
+      for (const s of seeds) {
+        try {
+          const seedHash = await walletClient.writeContract({
+            address: PREDICT_MARKET_CONTRACT, abi: predictMarketAbi, functionName: 'deposit', args: [s.id, s.outcome, SEED_PER_OUTCOME],
+          })
+          await publicClient.waitForTransactionReceipt({ hash: seedHash })
+          seeded++
+        } catch (seedErr) {
+          console.error(`curator: seed deposit failed for market ${s.id} outcome ${s.outcome}:`, seedErr)
+        }
+      }
+      // Surface the seed outcome in the cron response, not just the logs.
+      results.push({ slot: 'seed', outcome: `seeded-${seeded}/${seeds.length}` })
+    } catch (approveErr) {
+      console.error('curator: seed approve failed; created markets left unseeded:', approveErr)
+      results.push({ slot: 'seed', outcome: 'approve-failed' })
     }
   }
 

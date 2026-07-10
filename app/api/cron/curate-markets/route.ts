@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runCurator } from '@/lib/markets/curator'
 
+// The curator now also seeds each new market (approve + deposits), so a run does several
+// sequential txs; give the function room beyond the default.
+export const maxDuration = 60
+
 function requireEnv(key: string): string {
   const val = process.env[key]
   if (!val) throw new Error(`${key} not configured`)
