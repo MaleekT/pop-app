@@ -11,6 +11,9 @@ import { TEMPLATES, type TemplateKey } from '@/lib/templates'
 import { PREDICT_MARKET_CONTRACT, predictMarketAbi } from '@/lib/predict/contracts'
 import { backBtnStyle, ctaStyle, inputStyle, friendlyTxError, categoryLabel } from '@/components/predict/ui'
 import { asUTC, categoryFor, deriveOutcomes, marketDefinition } from '@/lib/markets/definition'
+import { CoinSearchInput } from '@/components/predict/CoinSearchInput'
+import { LivePriceChip } from '@/components/predict/LivePriceChip'
+import { MatchSearchInput } from '@/components/predict/MatchSearchInput'
 
 const TEMPLATE_ORDER: TemplateKey[] = [
   'crypto_price_above',
@@ -21,9 +24,10 @@ const TEMPLATE_ORDER: TemplateKey[] = [
   'youtube_subs',
 ]
 
-// Fields the market form does not collect: 1v1-only picks and the fixed over/under
-// direction (a market covers both sides), plus resolveAt which is its own control.
-const SKIP_FIELDS = new Set(['pickedTeam', 'creatorOutcome', 'direction', 'resolveAt'])
+// Fields the form does not collect directly: 1v1-only picks, the fixed over/under
+// direction (a market covers both sides), resolveAt (its own control), and the team names
+// (auto-filled by the fixture picker).
+const SKIP_FIELDS = new Set(['pickedTeam', 'creatorOutcome', 'direction', 'resolveAt', 'homeTeam', 'awayTeam'])
 
 export default function NewMarketPage() {
   const router = useRouter()
@@ -178,16 +182,65 @@ export default function NewMarketPage() {
         {template && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {fields.map((field) => (
-              <label key={field.name} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div key={field.name} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-pop-muted)' }}>{field.label}</span>
-                <input
-                  type={field.type === 'number' ? 'number' : 'text'}
-                  placeholder={field.placeholder}
-                  value={params[field.name] ?? ''}
-                  onChange={(e) => setParams((v) => ({ ...v, [field.name]: e.target.value }))}
-                  style={inputStyle}
-                />
-              </label>
+
+                {field.name === 'coin' ? (
+                  <>
+                    <CoinSearchInput
+                      value={params.coin ?? ''}
+                      displayValue={params.coinName ?? ''}
+                      onChange={(id, display) => setParams((v) => ({ ...v, coin: id, coinName: display }))}
+                    />
+                    <LivePriceChip coinId={params.coin ?? ''} />
+                  </>
+                ) : field.name === 'sport' ? (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {(['football', 'basketball'] as const).map((s) => {
+                      const active = params.sport === s
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setParams((v) => ({ ...v, sport: s, fixtureId: '', homeTeam: '', awayTeam: '' }))}
+                          style={{
+                            flex: 1, padding: '10px 0', borderRadius: 'var(--radius-input)', border: '1px solid',
+                            borderColor: active ? 'var(--color-pop-accent)' : 'var(--color-pop-surface-2)',
+                            background: active ? 'rgba(215,255,30,0.08)' : 'var(--color-pop-surface)',
+                            color: active ? 'var(--color-pop-accent)' : 'var(--color-pop-muted)',
+                            fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer',
+                          }}
+                        >
+                          {s.charAt(0).toUpperCase() + s.slice(1)}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : field.name === 'fixtureId' ? (
+                  params.sport ? (
+                    <MatchSearchInput
+                      sport={params.sport}
+                      homeTeam={params.homeTeam ?? ''}
+                      awayTeam={params.awayTeam ?? ''}
+                      onChange={(fixture) => {
+                        const kickoff = new Date(fixture.date).getTime()
+                        if (!isNaN(kickoff)) setResolveAt(new Date(kickoff + 3 * 60 * 60 * 1000).toISOString().slice(0, 16))
+                        setParams((v) => ({ ...v, fixtureId: fixture.id, homeTeam: fixture.homeTeam, awayTeam: fixture.awayTeam }))
+                      }}
+                    />
+                  ) : (
+                    <p style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem', margin: 0, padding: '10px 0' }}>↑ Pick a sport first</p>
+                  )
+                ) : (
+                  <input
+                    type={field.type === 'number' ? 'number' : 'text'}
+                    placeholder={field.placeholder}
+                    value={params[field.name] ?? ''}
+                    onChange={(e) => setParams((v) => ({ ...v, [field.name]: e.target.value }))}
+                    style={inputStyle}
+                  />
+                )}
+              </div>
             ))}
 
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
