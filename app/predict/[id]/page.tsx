@@ -2,15 +2,15 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import { parseUnits, zeroAddress } from 'viem'
+import { useParams, useRouter } from 'next/navigation'
+import { parseUnits, zeroAddress, keccak256, toHex } from 'viem'
 import { useAccount, useReadContract, useReadContracts, useWriteContract, usePublicClient } from 'wagmi'
 import { AppNav } from '@/components/AppNav'
 import { UsdcAmount } from '@/components/UsdcAmount'
 import { OddsBar } from '@/components/predict/OddsBar'
 import { MarketStatusBadge } from '@/components/predict/MarketStatusBadge'
 import {
-  backBtnStyle, cardStyle, ctaStyle, inputStyle, chipStyle,
+  backBtnStyle, cardStyle, ctaStyle, secondaryCtaStyle, inputStyle, chipStyle,
   categoryLabel, outcomeColor, friendlyTxError,
 } from '@/components/predict/ui'
 import { PREDICT_MARKET_CONTRACT, predictMarketAbi, MARKET_STATUS } from '@/lib/predict/contracts'
@@ -26,6 +26,7 @@ export default function MarketDetailPage() {
 
   const [market, setMarket] = useState<MarketRow | null>(null)
   const [loading, setLoading] = useState(true)
+  const [parlayRefs, setParlayRefs] = useState<number | null>(null)
 
   const loadMarket = useCallback(() => {
     fetch(`/api/markets/${id}`)
@@ -35,6 +36,14 @@ export default function MarketDetailPage() {
   }, [id])
 
   useEffect(() => { loadMarket() }, [loadMarket])
+
+  useEffect(() => {
+    if (!market) { setParlayRefs(null); return }
+    fetch(`/api/markets/${market.on_chain_id}/parlay-refs`)
+      .then((r) => (r.ok ? r.json() : { count: 1 }))
+      .then((d: { count?: number }) => setParlayRefs(d.count ?? 0))
+      .catch(() => setParlayRefs(1)) // fail closed: block removal if the check fails
+  }, [market])
 
   const outcomes = market?.outcomes ?? []
   const onChainId = market ? BigInt(market.on_chain_id) : 0n
@@ -52,6 +61,7 @@ export default function MarketDetailPage() {
     contracts: outcomes.map((_, i) => ({ ...BASE, functionName: 'staked' as const, args: [onChainId, i, user] })),
     query: { enabled },
   })
+  const { data: ownerData } = useReadContract({ ...BASE, functionName: 'owner', query: { enabled } })
 
   const refetchAll = useCallback(() => {
     refetchPot(); refetchChain(); refetchClaimed(); refetchPools(); refetchStakes(); loadMarket()
@@ -83,6 +93,11 @@ export default function MarketDetailPage() {
   const resolveMs = new Date(market.resolve_at).getTime()
   const bettingOpen = status === 'Pending' && resolveMs > Date.now()
   const evidence = market.evidence as { sourceUrl?: string; rawValue?: string; rawStatus?: string } | null
+
+  const isOwner = Boolean(address && ownerData && address.toLowerCase() === (ownerData as string).toLowerCase())
+  // Removable only before anyone else pools in: the owner is the sole depositor (or the pool
+  // is empty) and no open parlay references it. The owner's own seed refunds via the cron.
+  const removable = isOwner && status === 'Pending' && totalPot === totalUserStake && parlayRefs === 0
 
   return (
     <>
@@ -143,6 +158,10 @@ export default function MarketDetailPage() {
           marketId={onChainId}
           onDone={refetchAll}
         />
+
+        {isOwner && status === 'Pending' && (
+          <OwnerActions market={market} marketId={onChainId} removable={removable} />
+        )}
 
         {evidence?.sourceUrl && (
           <div style={{ ...cardStyle, marginTop: 20 }}>
@@ -347,6 +366,80 @@ function ClaimActions({
       >
         {busy ? 'Processing…' : canClaim ? 'Claim winnings' : 'Claim refund'}
       </button>
+    </div>
+  )
+}
+
+// ─── Owner controls ───────────────────────────────────────────────────────────
+
+function OwnerActions({ market, marketId, removable }: { market: MarketRow; marketId: bigint; removable: boolean }) {
+  const router = useRouter()
+  const publicClient = usePublicClient()
+  const { writeContractAsync } = useWriteContract()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  function handleEdit() {
+    // Edit = recreate with changes (on-chain markets are immutable). Hand the current
+    // template + params to the create form via sessionStorage.
+    sessionStorage.setItem('predict-edit', JSON.stringify({
+      key: market.template_key,
+      params: market.params,
+      resolveAt: new Date(market.resolve_at).toISOString().slice(0, 16),
+    }))
+    router.push('/predict/new')
+  }
+
+  async function handleRemove() {
+    if (!publicClient) return
+    setError('')
+    try {
+      setBusy(true)
+      // voidMarket is owner-callable and costless on an unbacked market. The owner's own
+      // seed (if any) is returned automatically by the resolve-markets reclaim cron.
+      const evidenceHash = keccak256(toHex(`owner-removed:${market.on_chain_id}`))
+      const hash = await writeContractAsync({ address: PREDICT_MARKET_CONTRACT, abi: predictMarketAbi, functionName: 'voidMarket', args: [marketId, evidenceHash] })
+      await publicClient.waitForTransactionReceipt({ hash })
+      try {
+        await fetch(`/api/markets/${market.on_chain_id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'Voided' }),
+        })
+      } catch { /* DB mirror is best-effort; the market is voided on-chain regardless */ }
+      router.push('/predict')
+    } catch (e) {
+      setError(friendlyTxError(e))
+      setBusy(false)
+    }
+  }
+
+  if (!removable) {
+    return (
+      <div style={{ ...cardStyle, marginTop: 20 }}>
+        <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>Owner controls</span>
+        <p style={{ color: 'var(--color-pop-muted)', fontSize: '0.82rem', margin: '8px 0 0' }}>
+          This market already has deposits from others or is used in a parlay, so it can no longer be edited or removed.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ ...cardStyle, marginTop: 20 }}>
+      <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>Owner controls</span>
+      <p style={{ color: 'var(--color-pop-muted)', fontSize: '0.82rem', margin: '8px 0 14px' }}>
+        No one else has backed this market yet, so you can still edit or remove it.
+      </p>
+      {error && <p style={{ color: 'var(--color-pop-danger)', fontSize: '0.82rem', margin: '0 0 10px' }}>{error}</p>}
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={handleEdit} disabled={busy} style={{ ...secondaryCtaStyle, opacity: busy ? 0.5 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}>
+          Edit
+        </button>
+        <button onClick={handleRemove} disabled={busy} style={{ ...ctaStyle, background: 'var(--color-pop-danger)', color: '#fff', opacity: busy ? 0.5 : 1, cursor: busy ? 'not-allowed' : 'pointer' }}>
+          {busy ? 'Removing…' : 'Remove market'}
+        </button>
+      </div>
     </div>
   )
 }

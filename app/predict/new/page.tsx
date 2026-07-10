@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { keccak256, toHex, parseEventLogs } from 'viem'
@@ -40,6 +40,22 @@ export default function NewMarketPage() {
   const [resolveAt, setResolveAt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  // Pre-fill from an "Edit" action on a market detail page (via sessionStorage), so editing
+  // is really "recreate with changes" — on-chain markets are immutable.
+  useEffect(() => {
+    const raw = typeof window !== 'undefined' ? sessionStorage.getItem('predict-edit') : null
+    if (!raw) return
+    sessionStorage.removeItem('predict-edit')
+    try {
+      const data = JSON.parse(raw) as { key?: TemplateKey; params?: Record<string, string>; resolveAt?: string }
+      if (data.key && TEMPLATES[data.key]) {
+        setKey(data.key)
+        setParams(data.params ?? {})
+        setResolveAt(data.resolveAt ?? '')
+      }
+    } catch { /* ignore malformed pre-fill */ }
+  }, [])
 
   const { data: owner } = useReadContract({
     address: PREDICT_MARKET_CONTRACT,
