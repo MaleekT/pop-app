@@ -102,7 +102,7 @@ export function Footer() {
         </span>
         <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
           <a
-            href="https://discord.gg/"
+            href=""
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Discord"
@@ -115,7 +115,7 @@ export function Footer() {
             </svg>
           </a>
           <a
-            href="https://x.com/"
+            href=""
             target="_blank"
             rel="noopener noreferrer"
             aria-label="X (Twitter)"

@@ -17,7 +17,10 @@ contract PredictMarket is ReentrancyGuard {
     address public immutable resolver;   // automated agent: proposes and voids outcomes
     address public immutable owner;      // curates markets and arbitrates challenges
 
-    uint256 public constant CHALLENGE_WINDOW = 1 hours;
+    // Instant resolution: no challenge window. A finished market is proposed and finalized
+    // in the same resolver run. finalize() uses a strict `<` so it can settle in the same
+    // block as the proposal even when this is 0.
+    uint256 public constant CHALLENGE_WINDOW = 0;
     uint256 public constant RESOLVE_TIMEOUT = 30 days;
     uint8   public constant MAX_OUTCOMES = 3;
 
@@ -138,7 +141,7 @@ contract PredictMarket is ReentrancyGuard {
     function finalize(uint256 id) external {
         Market storage m = markets[id];
         if (m.status != Status.Proposed) revert WrongStatus();
-        if (block.timestamp <= m.proposedAt + CHALLENGE_WINDOW) revert WindowOpen();
+        if (block.timestamp < m.proposedAt + CHALLENGE_WINDOW) revert WindowOpen();
         _settle(id, m, m.resolvedOutcome);
     }
 

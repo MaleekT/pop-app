@@ -122,7 +122,7 @@ contract PredictMarketTest is Test {
         assertEq(address(pm.USDC()), address(usdc));
         assertEq(pm.resolver(), resolver);
         assertEq(pm.owner(), owner);
-        assertEq(pm.CHALLENGE_WINDOW(), 1 hours);
+        assertEq(pm.CHALLENGE_WINDOW(), 0);
         assertEq(pm.RESOLVE_TIMEOUT(), 30 days);
         assertEq(pm.MAX_OUTCOMES(), 3);
     }
@@ -410,13 +410,14 @@ contract PredictMarketTest is Test {
         pm.finalize(id);
     }
 
-    function test_finalize_revertWindowOpen() public {
+    function test_finalize_immediatelyAfterPropose() public {
         uint256 id = _market(2);
         _bet(id, YES, alice, BET);
+        _bet(id, NO, bob, BET);
         _propose(id, YES);
-        vm.warp(resolveAt + pm.CHALLENGE_WINDOW()); // boundary — still open
-        vm.expectRevert(PredictMarket.WindowOpen.selector);
+        // CHALLENGE_WINDOW == 0: finalize settles in the same block as the proposal.
         pm.finalize(id);
+        assertEq(uint8(pm.getMarket(id).status), uint8(PredictMarket.Status.Resolved));
     }
 
     function test_finalize_zeroWinningPool_voids() public {

@@ -10,7 +10,7 @@ import type { MarketResolveInput } from '@/lib/markets/engines/types'
 import type { MarketRow, MarketEvidenceJson, MarketVoidEvidenceJson } from '@/lib/markets/db.types'
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_PREDICT_MARKET_CONTRACT!
-const CHALLENGE_WINDOW_MS = 60 * 60 * 1000 // mirrors PredictMarket.CHALLENGE_WINDOW (1 hour)
+const CHALLENGE_WINDOW_MS = 0 // mirrors PredictMarket.CHALLENGE_WINDOW (instant: propose + finalize in one run)
 const SPORTS_KEYS = new Set(['sports_winner', 'sports_score'])
 
 function requireEnv(key: string): string {
