@@ -60,6 +60,7 @@ export function AppNav() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <Link href="/predict/my" className="my-bets-link">My Predict</Link>
         <Link href="/my" className="my-bets-link">My Bets</Link>
         <ConnectButton />
       </div>
