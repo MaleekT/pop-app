@@ -8,11 +8,13 @@ import { AppNav } from '@/components/AppNav'
 import { BetsList } from '@/components/BetsList'
 import { UsdcAmount } from '@/components/UsdcAmount'
 import { MarketCard } from '@/components/predict/MarketCard'
+import { StatChip, StatRow } from '@/components/StatChip'
 import { cardStyle } from '@/components/predict/ui'
 import type { BetRow } from '@/lib/db.types'
 import type { MarketRow, ParlayRow } from '@/lib/markets/db.types'
 
 type Tab = '1v1' | 'predictions' | 'parlays'
+type PositionRow = MarketRow & { outcomeIndex: number }
 
 // Parlay status colours, matching the parlay pages.
 const TICKET_STATUS_COLOR: Record<string, string> = {
@@ -26,7 +28,7 @@ export default function ActivityPage() {
   const { address, isConnected } = useAccount()
   const [tab, setTab] = useState<Tab>('1v1')
   const [bets, setBets] = useState<BetRow[]>([])
-  const [positions, setPositions] = useState<MarketRow[]>([])
+  const [positions, setPositions] = useState<PositionRow[]>([])
   const [tickets, setTickets] = useState<ParlayRow[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -61,6 +63,14 @@ export default function ActivityPage() {
     ['predictions', 'Predictions'],
     ['parlays', 'Parlays'],
   ]
+
+  // A prediction wins when the market resolved to the outcome the wallet backed.
+  const predWon = positions.filter((p) => p.status === 'Resolved' && p.resolved_outcome === p.outcomeIndex).length
+  const predLost = positions.filter((p) => p.status === 'Resolved' && p.resolved_outcome != null && p.resolved_outcome !== p.outcomeIndex).length
+  const predVoided = positions.filter((p) => p.status === 'Voided').length
+  const parWon = tickets.filter((t) => t.status === 'Won').length
+  const parLost = tickets.filter((t) => t.status === 'Lost').length
+  const parRefunded = tickets.filter((t) => t.status === 'Refunded').length
 
   return (
     <>
@@ -129,9 +139,17 @@ export default function ActivityPage() {
                   cta="Browse markets →"
                 />
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-                  {positions.map((m) => <MarketCard key={`${m.contract_address}-${m.on_chain_id}`} market={m} />)}
-                </div>
+                <>
+                  <StatRow>
+                    <StatChip label="Positions" value={positions.length} />
+                    <StatChip label="Won" value={predWon} variant="accent" />
+                    <StatChip label="Lost" value={predLost} variant="danger" />
+                    {predVoided > 0 && <StatChip label="Voided" value={predVoided} variant="muted" />}
+                  </StatRow>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+                    {positions.map((m) => <MarketCard key={`${m.contract_address}-${m.on_chain_id}`} market={m} />)}
+                  </div>
+                </>
               )
             ) : loading ? (
               <p style={{ color: 'var(--color-pop-muted)' }}>Loading…</p>
@@ -143,24 +161,32 @@ export default function ActivityPage() {
                 cta="Build a slip →"
               />
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
-                {tickets.map((t) => (
-                  <Link key={t.on_chain_id} href={`/parlay/${t.on_chain_id}`} style={{ textDecoration: 'none' }}>
-                    <div style={{ ...cardStyle, padding: 16 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem' }}>{t.legs.length} legs</span>
-                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: TICKET_STATUS_COLOR[t.status] ?? 'var(--color-pop-muted)', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
-                          {t.status}
-                        </span>
+              <>
+                <StatRow>
+                  <StatChip label="Tickets" value={tickets.length} />
+                  <StatChip label="Won" value={parWon} variant="accent" />
+                  <StatChip label="Lost" value={parLost} variant="danger" />
+                  {parRefunded > 0 && <StatChip label="Refunded" value={parRefunded} variant="muted" />}
+                </StatRow>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+                  {tickets.map((t) => (
+                    <Link key={t.on_chain_id} href={`/parlay/${t.on_chain_id}`} style={{ textDecoration: 'none' }}>
+                      <div style={{ ...cardStyle, padding: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem' }}>{t.legs.length} legs</span>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: TICKET_STATUS_COLOR[t.status] ?? 'var(--color-pop-muted)', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
+                            {t.status}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                          <span style={{ color: 'var(--color-pop-text)' }}><UsdcAmount amount={t.stake} /></span>
+                          <span style={{ color: 'var(--color-pop-accent)', fontWeight: 700, fontSize: '0.85rem' }}>{(Number(t.locked_multiplier) / 1e6).toFixed(2)}x</span>
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <span style={{ color: 'var(--color-pop-text)' }}><UsdcAmount amount={t.stake} /></span>
-                        <span style={{ color: 'var(--color-pop-accent)', fontWeight: 700, fontSize: '0.85rem' }}>{(Number(t.locked_multiplier) / 1e6).toFixed(2)}x</span>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
+                    </Link>
+                  ))}
+                </div>
+              </>
             )}
           </>
         )}

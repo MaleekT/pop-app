@@ -18,14 +18,15 @@ export async function GET(req: NextRequest) {
   const db = createMarketsClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (db.from('market_positions') as any)
-    .select('markets(*)')
+    .select('outcome_index, markets(*)')
     .eq('bettor', checksummed)
 
-  const rows = (data ?? []) as { markets: MarketRow | null }[]
-  const unique = new Map<string, MarketRow>()
+  // Attach the wallet's backed outcome to each market so the UI can tell won from lost.
+  const rows = (data ?? []) as { outcome_index: number; markets: MarketRow | null }[]
+  const unique = new Map<string, MarketRow & { outcomeIndex: number }>()
   for (const row of rows) {
     const m = row.markets
-    if (m) unique.set(`${m.contract_address}-${m.on_chain_id}`, m)
+    if (m) unique.set(`${m.contract_address}-${m.on_chain_id}`, { ...m, outcomeIndex: row.outcome_index })
   }
 
   return NextResponse.json([...unique.values()])

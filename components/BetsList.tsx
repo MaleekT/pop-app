@@ -7,6 +7,7 @@ import { UsdcAmount } from '@/components/UsdcAmount'
 import { AddressLink } from '@/components/TxLink'
 import type { BetRow, BetStatus } from '@/lib/db.types'
 import { formatBetTitle } from '@/lib/display-name'
+import { StatChip } from '@/components/StatChip'
 
 // Shared 1v1 bets list — the exact rendering used by the PvP "My bets" page,
 // extracted so the Activity hub's "1v1 Bets" tab shows the identical view.
@@ -18,25 +19,6 @@ const TAB_STATUSES: Record<Tab, BetStatus[]> = {
   Active:   ACTIVE_STATUSES,
   Resolved: ['Resolved', 'Cancelled', 'Expired', 'Voided'],
   Disputed: ['Disputed'],
-}
-
-interface StatChipProps { label: string; value: number; variant?: 'accent' | 'danger' | 'muted' | 'default' }
-
-function StatChip({ label, value, variant = 'default' }: StatChipProps) {
-  const valueColor = variant === 'accent'
-    ? 'var(--color-pop-accent)'
-    : variant === 'danger'
-      ? 'var(--color-pop-danger)'
-      : variant === 'muted'
-        ? 'var(--color-pop-muted)'
-        : 'var(--color-pop-text)'
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <span style={{ fontSize: '1.25rem', fontWeight: 700, color: valueColor, lineHeight: 1 }}>{value}</span>
-      <span style={{ fontSize: '0.7rem', color: 'var(--color-pop-muted)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</span>
-    </div>
-  )
 }
 
 interface BetsListProps {

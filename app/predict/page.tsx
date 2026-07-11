@@ -16,11 +16,58 @@ const FILTERS = [
 ] as const
 type FilterKey = (typeof FILTERS)[number]['key']
 
+const CATEGORY_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'crypto', label: 'Crypto' },
+  { key: 'sports', label: 'Sports' },
+  { key: 'youtube', label: 'Social' },
+] as const
+type CategoryKey = (typeof CATEGORY_FILTERS)[number]['key']
+
+function FilterRow({ label, options, active, onSelect }: {
+  label: string
+  options: readonly { key: string; label: string }[]
+  active: string
+  onSelect: (key: string) => void
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <span style={{ width: 52, fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-pop-muted)', opacity: 0.7 }}>
+        {label}
+      </span>
+      {options.map((o) => {
+        const isActive = active === o.key
+        return (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => onSelect(o.key)}
+            style={{
+              padding: '7px 16px',
+              borderRadius: 'var(--radius-pill)',
+              border: '1px solid',
+              borderColor: isActive ? 'var(--color-pop-accent)' : 'var(--color-pop-surface-2)',
+              background: isActive ? 'rgba(215,255,30,0.08)' : 'var(--color-pop-surface)',
+              color: isActive ? 'var(--color-pop-accent)' : 'var(--color-pop-muted)',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+            }}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function PredictPage() {
   const { address } = useAccount()
   const [markets, setMarkets] = useState<MarketRow[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterKey>('all')
+  const [category, setCategory] = useState<CategoryKey>('all')
 
   const { data: owner } = useReadContract({
     address: PREDICT_MARKET_CONTRACT,
@@ -48,9 +95,11 @@ export default function PredictPage() {
   }, [])
 
   const filtered = markets.filter((m) => {
-    if (filter === 'open') return m.status === 'Pending'
-    if (filter === 'resolved') return m.status === 'Resolved' || m.status === 'Voided'
-    return true
+    const statusOk =
+      filter === 'open' ? m.status === 'Pending'
+      : filter === 'resolved' ? m.status === 'Resolved' || m.status === 'Voided'
+      : true
+    return statusOk && (category === 'all' || m.category === category)
   })
 
   return (
@@ -87,30 +136,9 @@ export default function PredictPage() {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 28 }}>
-          {FILTERS.map((f) => {
-            const active = filter === f.key
-            return (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setFilter(f.key)}
-                style={{
-                  padding: '7px 16px',
-                  borderRadius: 'var(--radius-pill)',
-                  border: '1px solid',
-                  borderColor: active ? 'var(--color-pop-accent)' : 'var(--color-pop-surface-2)',
-                  background: active ? 'rgba(215,255,30,0.08)' : 'var(--color-pop-surface)',
-                  color: active ? 'var(--color-pop-accent)' : 'var(--color-pop-muted)',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                }}
-              >
-                {f.label}
-              </button>
-            )
-          })}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
+          <FilterRow label="Status" options={FILTERS} active={filter} onSelect={(k) => setFilter(k as FilterKey)} />
+          <FilterRow label="Type" options={CATEGORY_FILTERS} active={category} onSelect={(k) => setCategory(k as CategoryKey)} />
         </div>
 
         {loading ? (
