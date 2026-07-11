@@ -69,17 +69,47 @@ is committed + Vercel-verified (READY) + `/code-review`'d, and the memory file i
 
 ---
 
-## 🚀 Phase 7 — Hardening, polish & merge
-- Full regression across markets + parlays + curator + all crons.
-- Security / edge pass (owner gating, cron auth, void/settle races).
-- Demo polish (empty states, copy).
-- Update docs + memory.
-- **Merge `feat/predict` → `master`** — gated on user preview + approval.
+## 🚀 Phase 7 — UX overhaul + instant resolution + merge
+
+*Post-6b overhaul (decisions locked with the user): a nested Predict section, one unified "Activity"
+hub, and instant market resolution. Same per-unit rules (commit + Vercel-verify + review).*
+
+### 7a — Instant resolution (contract redeploy)
+- **Goal:** a finished match resolves immediately — no 1-hour challenge window, no "Proposed" limbo.
+- Set `PredictMarket.sol` `CHALLENGE_WINDOW = 0` (update the Foundry tests that assert the window) and
+  `resolver.ts` `CHALLENGE_WINDOW_MS = 0`, so one cron run **proposes + finalizes** a finished match.
+- **Redeploy `PredictMarket` AND `Parlay`** to Arc (Parlay's constructor is bound to the market address,
+  so both move); re-fund the house pool.
+- **You:** update `NEXT_PUBLIC_PREDICT_MARKET_CONTRACT` + `NEXT_PUBLIC_PARLAY_CONTRACT` (Vercel Preview).
+- **Caveats:** "once the game is over" = once TheSportsDB marks it Finished (data-provider lag). Old
+  markets are superseded — claim the current Spain position on the old contract first (~1h) or treat it
+  as throwaway test state.
+
+### 7b — Nested Predict + unified Activity hub
+- **Top nav → `Home · Lobby · Predict · Activity`** (+ wallet); About/FAQ move to the footer.
+- **Predict sub-nav** (new shared component): segmented `Markets | Parlays` on the predict + parlay
+  pages, so Parlays reads as *inside* Predict.
+- **Activity hub** (`/activity`): tabs `1v1 Bets | Predictions | Parlays` — one place for everything you're
+  staked in. 1v1 reuses the existing My Bets list; Predictions = `/api/positions`; Parlays = `/api/parlays`.
+- Retire "My Predict" (folds into Activity); redirect `/predict/my` → `/activity`.
+- **Touches:** `AppNav` + the PvP My Bets page (additive — the 1v1 view is unchanged).
+
+### 7c — Clarity pass
+- Plain-language statuses (Open / Betting closed / Settled — claim ready / Cancelled — refund) — instant
+  resolution removes the confusing "Proposed" state.
+- One obvious primary action per page; empty + loading states; consistent sub-nav.
+- Full end-to-end walkthrough (create → seed → bet → resolve → claim; parlay → settle).
+
+### 7d — Regression + merge
+- Verify PvP still works untouched; full Predict regression (markets, parlays, curator, 4 crons, Activity).
+- Consolidated `/code-review`.
+- **Merge `feat/predict` → `master`** — gated on your preview + approval.
 
 ---
 
 ## Rules applied to every 6b/7 unit
-- **Additive only** — PvP logic never touched (the only shared file remains `AppNav`).
+- **Additive only** — PvP *logic* never touched. Phase 7 edits two shared UI files additively: `AppNav`
+  (nav) and the My Bets page (adds Predict/Parlay tabs; the 1v1 view stays as-is).
 - **Commit + push per unit**; the Vercel build must go **READY** (local `node_modules` is broken, so
   Vercel is the compile gate).
 - **`/code-review` per unit**; fix real findings.
