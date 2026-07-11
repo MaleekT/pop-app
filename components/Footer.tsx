@@ -1,7 +1,11 @@
-import Link from 'next/link'
+'use client'
 
-// Global footer. Home has the full About / FAQ sections; the top nav stays lean,
-// so the footer carries the About / FAQ links (plus the section shortcuts) on every page.
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+
+// Global footer for every page except the landing page, which ships its own richer
+// footer. The top nav stays lean, so this footer carries the About / FAQ links
+// (plus section shortcuts) on the app pages that would otherwise have none.
 
 const LINK_GROUPS: { heading: string; links: { label: string; href: string }[] }[] = [
   {
@@ -22,6 +26,10 @@ const LINK_GROUPS: { heading: string; links: { label: string; href: string }[] }
 ]
 
 export function Footer() {
+  const pathname = usePathname()
+  // The landing page ships its own richer footer; avoid doubling up.
+  if (pathname === '/') return null
+
   return (
     <footer
       style={{
