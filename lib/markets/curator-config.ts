@@ -44,7 +44,7 @@ export const HORIZONS: Horizon[] = [
 // instead of filling up with one), and the hard per-run creation cap (a bad config or
 // price glitch can never spam more than this many markets in a single run).
 export const TARGET_OPEN_PER_COIN = 2
-export const MAX_CREATES_PER_RUN = 3
+export const MAX_CREATES_PER_RUN = 5
 
 // ── Sports ───────────────────────────────────────────────────────────────────
 // Teams to auto-list upcoming matches for. tsdbId is the TheSportsDB team id (same source
@@ -64,5 +64,5 @@ export const SPORTS_FOLLOW: FollowedTeam[] = [
   { name: 'Boston Celtics', tsdbId: '134860', sport: 'basketball' },
 ]
 
-export const TARGET_OPEN_SPORTS = 4 // how many open sports markets to keep alive
+export const TARGET_OPEN_SPORTS = 6 // how many open sports markets to keep alive
 export const FIXTURES_PER_TEAM = 2  // inspect each followed team's next N fixtures

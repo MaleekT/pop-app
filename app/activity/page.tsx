@@ -57,9 +57,9 @@ export default function ActivityPage() {
   }, [address])
 
   const tabs: [Tab, string][] = [
-    ['1v1', `1v1 Bets${bets.length ? ` (${bets.length})` : ''}`],
-    ['predictions', `Predictions${positions.length ? ` (${positions.length})` : ''}`],
-    ['parlays', `Parlays${tickets.length ? ` (${tickets.length})` : ''}`],
+    ['1v1', '1v1 Bets'],
+    ['predictions', 'Predictions'],
+    ['parlays', 'Parlays'],
   ]
 
   return (

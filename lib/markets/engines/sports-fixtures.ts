@@ -71,5 +71,6 @@ export async function fetchUpcomingFixtures(followed: FollowedTeam[], perTeam: n
       out.push(f)
     }
   }
-  return out
+  // Soonest first, so the most imminent (and most viral) fixtures are created before later ones.
+  return out.sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
 }

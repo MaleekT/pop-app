@@ -325,7 +325,9 @@ export async function runCurator(): Promise<CuratorResult> {
     })
   }
 
-  const candidates = [...cryptoCandidates, ...sportsCandidates].slice(0, MAX_CREATES_PER_RUN)
+  // Sports first: upcoming fixtures (e.g. World Cup matches) are timely and viral, so they
+  // get first claim on the per-run cap; crypto is always available and fills the remainder.
+  const candidates = [...sportsCandidates, ...cryptoCandidates].slice(0, MAX_CREATES_PER_RUN)
   if (candidates.length === 0) {
     return { created: 0, results: [{ slot: '-', outcome: 'nothing-to-create' }] }
   }
