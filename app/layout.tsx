@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Bebas_Neue, Space_Grotesk } from 'next/font/google'
 import { Providers } from '@/components/providers'
+import { Footer } from '@/components/Footer'
 import './globals.css'
 
 const bebasNeue = Bebas_Neue({
@@ -32,6 +33,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-[#0B0B0F] text-[#F5F5F7]">
         <Providers>{children}</Providers>
+        <Footer />
       </body>
     </html>
   )

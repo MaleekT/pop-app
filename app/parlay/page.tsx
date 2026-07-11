@@ -8,7 +8,8 @@ import { useAccount, useReadContract, useWriteContract, usePublicClient } from '
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { AppNav } from '@/components/AppNav'
 import { UsdcAmount } from '@/components/UsdcAmount'
-import { backBtnStyle, cardStyle, ctaStyle, inputStyle, outcomeColor, friendlyTxError } from '@/components/predict/ui'
+import { PredictSubNav } from '@/components/predict/PredictSubNav'
+import { cardStyle, ctaStyle, inputStyle, outcomeColor, friendlyTxError } from '@/components/predict/ui'
 import { PARLAY_CONTRACT, parlayAbi, USDC } from '@/lib/predict/contracts'
 import { erc20Abi } from '@/lib/contracts'
 import { formatBetTitle } from '@/lib/display-name'
@@ -110,7 +111,7 @@ export default function ParlayPage() {
     <>
       <AppNav />
       <main style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px 96px' }}>
-        <Link href="/predict" style={{ ...backBtnStyle, display: 'inline-block', textDecoration: 'none' }}>← Markets</Link>
+        <PredictSubNav />
         <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(2.25rem, 4.5vw, 3.25rem)', fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 10px' }}>
           PARLAY
         </h1>

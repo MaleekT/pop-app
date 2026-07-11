@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useAccount, useReadContract } from 'wagmi'
 import { AppNav } from '@/components/AppNav'
 import { MarketCard } from '@/components/predict/MarketCard'
+import { PredictSubNav } from '@/components/predict/PredictSubNav'
 import { PREDICT_MARKET_CONTRACT, predictMarketAbi } from '@/lib/predict/contracts'
 import type { MarketRow } from '@/lib/markets/db.types'
 
@@ -56,6 +57,7 @@ export default function PredictPage() {
     <>
       <AppNav />
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: '48px 24px 96px' }}>
+        <PredictSubNav />
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap', marginBottom: 32 }}>
           <div>
             <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(2.5rem, 5vw, 3.75rem)', fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 12px', lineHeight: 1 }}>
