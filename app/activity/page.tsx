@@ -9,11 +9,13 @@ import { BetsList } from '@/components/BetsList'
 import { UsdcAmount } from '@/components/UsdcAmount'
 import { MarketCard } from '@/components/predict/MarketCard'
 import { StatChip, StatRow } from '@/components/StatChip'
+import { SubTabs } from '@/components/SubTabs'
 import { cardStyle } from '@/components/predict/ui'
 import type { BetRow } from '@/lib/db.types'
 import type { MarketRow, ParlayRow } from '@/lib/markets/db.types'
 
 type Tab = '1v1' | 'predictions' | 'parlays'
+type SubFilter = 'active' | 'resolved'
 type PositionRow = MarketRow & { outcomeIndex: number }
 
 // Parlay status colours, matching the parlay pages.
@@ -27,6 +29,8 @@ const TICKET_STATUS_COLOR: Record<string, string> = {
 export default function ActivityPage() {
   const { address, isConnected } = useAccount()
   const [tab, setTab] = useState<Tab>('1v1')
+  const [predTab, setPredTab] = useState<SubFilter>('active')
+  const [parTab, setParTab] = useState<SubFilter>('active')
   const [bets, setBets] = useState<BetRow[]>([])
   const [positions, setPositions] = useState<PositionRow[]>([])
   const [tickets, setTickets] = useState<ParlayRow[]>([])
@@ -71,6 +75,12 @@ export default function ActivityPage() {
   const parWon = tickets.filter((t) => t.status === 'Won').length
   const parLost = tickets.filter((t) => t.status === 'Lost').length
   const parRefunded = tickets.filter((t) => t.status === 'Refunded').length
+
+  // Sub-tab filtering: Active = still open/awaiting resolution; Resolved = terminal.
+  const shownPositions = positions.filter((p) =>
+    predTab === 'resolved' ? p.status === 'Resolved' || p.status === 'Voided' : p.status !== 'Resolved' && p.status !== 'Voided',
+  )
+  const shownTickets = tickets.filter((t) => (parTab === 'resolved' ? t.status !== 'Open' : t.status === 'Open'))
 
   return (
     <>
@@ -146,9 +156,18 @@ export default function ActivityPage() {
                     <StatChip label="Lost" value={predLost} variant="danger" />
                     {predVoided > 0 && <StatChip label="Voided" value={predVoided} variant="muted" />}
                   </StatRow>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-                    {positions.map((m) => <MarketCard key={`${m.contract_address}-${m.on_chain_id}`} market={m} />)}
-                  </div>
+                  <SubTabs
+                    tabs={[{ key: 'active', label: 'Active' }, { key: 'resolved', label: 'Resolved' }]}
+                    active={predTab}
+                    onSelect={(k) => setPredTab(k as SubFilter)}
+                  />
+                  {shownPositions.length === 0 ? (
+                    <p style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-pop-muted)' }}>No {predTab} predictions.</p>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+                      {shownPositions.map((m) => <MarketCard key={`${m.contract_address}-${m.on_chain_id}`} market={m} />)}
+                    </div>
+                  )}
                 </>
               )
             ) : loading ? (
@@ -168,24 +187,33 @@ export default function ActivityPage() {
                   <StatChip label="Lost" value={parLost} variant="danger" />
                   {parRefunded > 0 && <StatChip label="Refunded" value={parRefunded} variant="muted" />}
                 </StatRow>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
-                  {tickets.map((t) => (
-                    <Link key={t.on_chain_id} href={`/parlay/${t.on_chain_id}`} style={{ textDecoration: 'none' }}>
-                      <div style={{ ...cardStyle, padding: 16 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem' }}>{t.legs.length} legs</span>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: TICKET_STATUS_COLOR[t.status] ?? 'var(--color-pop-muted)', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
-                            {t.status}
-                          </span>
+                <SubTabs
+                  tabs={[{ key: 'active', label: 'Active' }, { key: 'resolved', label: 'Resolved' }]}
+                  active={parTab}
+                  onSelect={(k) => setParTab(k as SubFilter)}
+                />
+                {shownTickets.length === 0 ? (
+                  <p style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-pop-muted)' }}>No {parTab} tickets.</p>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+                    {shownTickets.map((t) => (
+                      <Link key={t.on_chain_id} href={`/parlay/${t.on_chain_id}`} style={{ textDecoration: 'none' }}>
+                        <div style={{ ...cardStyle, padding: 16 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem' }}>{t.legs.length} legs</span>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: TICKET_STATUS_COLOR[t.status] ?? 'var(--color-pop-muted)', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
+                              {t.status}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                            <span style={{ color: 'var(--color-pop-text)' }}><UsdcAmount amount={t.stake} /></span>
+                            <span style={{ color: 'var(--color-pop-accent)', fontWeight: 700, fontSize: '0.85rem' }}>{(Number(t.locked_multiplier) / 1e6).toFixed(2)}x</span>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                          <span style={{ color: 'var(--color-pop-text)' }}><UsdcAmount amount={t.stake} /></span>
-                          <span style={{ color: 'var(--color-pop-accent)', fontWeight: 700, fontSize: '0.85rem' }}>{(Number(t.locked_multiplier) / 1e6).toFixed(2)}x</span>
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </>
             )}
           </>

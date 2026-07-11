@@ -8,6 +8,7 @@ import { AddressLink } from '@/components/TxLink'
 import type { BetRow, BetStatus } from '@/lib/db.types'
 import { formatBetTitle } from '@/lib/display-name'
 import { StatChip } from '@/components/StatChip'
+import { SubTabs } from '@/components/SubTabs'
 
 // Shared 1v1 bets list — the exact rendering used by the PvP "My bets" page,
 // extracted so the Activity hub's "1v1 Bets" tab shows the identical view.
@@ -56,33 +57,15 @@ export function BetsList({ bets, address, loading }: BetsListProps) {
       )}
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: 'var(--color-pop-surface)', borderRadius: 'var(--radius-pill)', padding: 4 }}>
-        {(['Active', 'Resolved', 'Disputed'] as Tab[]).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              flex: 1,
-              padding: '8px 0',
-              borderRadius: 'var(--radius-pill)',
-              border: 'none',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              background: activeTab === tab ? 'var(--color-pop-surface-2)' : 'transparent',
-              color: activeTab === tab ? 'var(--color-pop-text)' : 'var(--color-pop-muted)',
-              transition: 'background 0.15s, color 0.15s',
-            }}
-          >
-            {tab}
-            {tab === 'Disputed' && disputedCount > 0 && (
-              <span style={{ marginLeft: 6, background: 'var(--color-pop-danger)', color: '#fff', borderRadius: 'var(--radius-pill)', padding: '1px 6px', fontSize: '0.65rem', fontWeight: 700 }}>
-                {disputedCount}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      <SubTabs
+        tabs={[
+          { key: 'Active', label: 'Active' },
+          { key: 'Resolved', label: 'Resolved' },
+          { key: 'Disputed', label: 'Disputed', badge: disputedCount },
+        ]}
+        active={activeTab}
+        onSelect={(k) => setActiveTab(k as Tab)}
+      />
 
       {loading && <p style={{ color: 'var(--color-pop-muted)' }}>Loading…</p>}
 
