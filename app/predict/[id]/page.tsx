@@ -122,6 +122,10 @@ export default function MarketDetailPage() {
           <OddsBar outcomes={outcomes} pools={pools} total={totalPot} resolvedOutcome={status === 'Resolved' ? resolvedOutcome : null} />
         </div>
 
+        {isOwner && status === 'Pending' && (
+          <OwnerActions market={market} marketId={onChainId} removable={removable} />
+        )}
+
         {totalUserStake > 0n && (
           <div style={{ ...cardStyle, marginBottom: 20 }}>
             <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem' }}>Your position</span>
@@ -158,10 +162,6 @@ export default function MarketDetailPage() {
           marketId={onChainId}
           onDone={refetchAll}
         />
-
-        {isOwner && status === 'Pending' && (
-          <OwnerActions market={market} marketId={onChainId} removable={removable} />
-        )}
 
         {evidence?.sourceUrl && (
           <div style={{ ...cardStyle, marginTop: 20 }}>
