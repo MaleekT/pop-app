@@ -6,11 +6,18 @@ import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { Logo } from '@/components/Logo'
 
 const NAV_LINKS = [
-  { label: 'Home',  href: '/' },
-  { label: 'About', href: '/#about' },
-  { label: 'FAQ',   href: '/#faq' },
-  { label: 'Lobby', href: '/lobby' },
+  { label: 'Home',     href: '/' },
+  { label: 'Lobby',    href: '/lobby' },
+  { label: 'Predict',  href: '/predict' },
+  { label: 'Activity', href: '/activity' },
 ] as const
+
+function isNavActive(href: string, pathname: string): boolean {
+  if (href === '/') return pathname === '/'
+  // Parlay is nested inside the Predict section, so keep Predict lit up there too.
+  if (href === '/predict') return pathname.startsWith('/predict') || pathname.startsWith('/parlay')
+  return pathname.startsWith(href)
+}
 
 export function AppNav() {
   const pathname = usePathname()
@@ -37,10 +44,7 @@ export function AppNav() {
         style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}
       >
         {NAV_LINKS.map(({ label, href }) => {
-          const isActive =
-            href === '/'
-              ? pathname === '/'
-              : pathname.startsWith(href.replace('/#', '/'))
+          const isActive = isNavActive(href, pathname)
           return (
             <Link
               key={href}
@@ -58,7 +62,6 @@ export function AppNav() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <Link href="/my" className="my-bets-link">My Bets</Link>
         <ConnectButton />
       </div>
     </nav>
