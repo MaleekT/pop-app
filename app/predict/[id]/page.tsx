@@ -99,6 +99,19 @@ export default function MarketDetailPage() {
   // is empty) and no open parlay references it. The owner's own seed refunds via the cron.
   const removable = isOwner && status === 'Pending' && totalPot === totalUserStake && parlayRefs === 0
 
+  // One plain-language line per state, so a viewer always knows what happened and what is next.
+  const winningLabel = resolvedOutcome != null ? outcomes[resolvedOutcome] : undefined
+  const statusBanner: { text: string; accent?: boolean } | null =
+    status === 'Resolved'
+      ? { text: `Settled. ${winningLabel ?? 'The winning outcome'} won.`, accent: true }
+      : status === 'Voided'
+        ? { text: 'Cancelled. Everyone who deposited can claim their stake back.' }
+        : status === 'Proposed' || status === 'Challenged'
+          ? { text: 'Settling now. The result is in and this market is being finalized.' }
+          : status === 'Pending' && !bettingOpen
+            ? { text: 'Betting is closed. This market settles automatically, usually within a minute or two.' }
+            : null
+
   return (
     <>
       <AppNav />
@@ -107,12 +120,20 @@ export default function MarketDetailPage() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
           <span style={chipStyle}>{categoryLabel(market.category)}</span>
-          <MarketStatusBadge status={status} />
+          <MarketStatusBadge status={status} resolveAt={market.resolve_at} />
         </div>
 
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700, lineHeight: 1.35, margin: '0 0 24px' }}>
           {formatBetTitle(market.definition_text)}
         </h1>
+
+        {statusBanner && (
+          <div style={{ ...cardStyle, marginBottom: 20, padding: '14px 18px', border: `1px solid ${statusBanner.accent ? 'rgba(34,197,94,0.4)' : 'var(--color-pop-surface-2)'}` }}>
+            <p style={{ margin: 0, color: statusBanner.accent ? 'var(--color-pop-win)' : 'var(--color-pop-muted)', fontSize: '0.9rem', lineHeight: 1.5 }}>
+              {statusBanner.text}
+            </p>
+          </div>
+        )}
 
         <div style={{ ...cardStyle, marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18 }}>
@@ -176,11 +197,6 @@ export default function MarketDetailPage() {
           </div>
         )}
 
-        {!bettingOpen && status === 'Pending' && (
-          <p style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem', marginTop: 20, textAlign: 'center' }}>
-            Betting is closed. Waiting for the resolver to settle this market.
-          </p>
-        )}
       </main>
     </>
   )

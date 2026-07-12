@@ -1,17 +1,30 @@
 import type { MarketStatus } from '@/lib/markets/db.types'
 
-// Predict markets have their own status set (adds Challenged, drops the 1v1-only
-// Locked/Disputed), so this is a sibling to the PvP StatusBadge rather than a reuse.
-const STYLES: Record<MarketStatus, { label: string; color: string }> = {
-  Pending:    { label: 'Open',       color: '#D7FF1E' },
-  Proposed:   { label: 'Proposed',   color: '#60A5FA' },
-  Challenged: { label: 'Challenged', color: '#F97316' },
-  Resolved:   { label: 'Resolved',   color: '#22C55E' },
-  Voided:     { label: 'Voided',     color: '#71717A' },
+// Plain-language status for Predict markets. With instant resolution there is no lingering
+// "Proposed" limbo, so a closed-but-unsettled market reads simply as "Resolving".
+interface Tone { label: string; color: string }
+
+const TONES: Record<string, Tone> = {
+  open:      { label: 'Open',         color: '#D7FF1E' },
+  resolving: { label: 'Resolving',    color: '#60A5FA' },
+  review:    { label: 'Under review', color: '#F97316' },
+  settled:   { label: 'Settled',      color: '#22C55E' },
+  cancelled: { label: 'Cancelled',    color: '#71717A' },
 }
 
-export function MarketStatusBadge({ status }: { status: MarketStatus }) {
-  const s = STYLES[status] ?? STYLES.Pending
+function toneFor(status: MarketStatus, resolveAt?: string): Tone {
+  if (status === 'Resolved') return TONES.settled
+  if (status === 'Voided') return TONES.cancelled
+  if (status === 'Challenged') return TONES.review
+  if (status === 'Proposed') return TONES.resolving
+  // Pending: "Open" while betting is live, otherwise it is closed and settling.
+  const closesAt = resolveAt ? new Date(resolveAt).getTime() : NaN
+  if (!Number.isNaN(closesAt) && closesAt <= Date.now()) return TONES.resolving
+  return TONES.open
+}
+
+export function MarketStatusBadge({ status, resolveAt }: { status: MarketStatus; resolveAt?: string }) {
+  const s = toneFor(status, resolveAt)
   return (
     <span
       style={{

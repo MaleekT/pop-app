@@ -35,7 +35,7 @@ export function MarketCard({ market }: { market: MarketRow }) {
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <span style={chipStyle}>{categoryLabel(market.category)}</span>
-          <MarketStatusBadge status={market.status} />
+          <MarketStatusBadge status={market.status} resolveAt={market.resolve_at} />
         </div>
 
         <p style={{ margin: 0, color: 'var(--color-pop-text)', fontWeight: 600, fontSize: '1rem', lineHeight: 1.4, flex: 1 }}>
