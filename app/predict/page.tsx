@@ -94,13 +94,21 @@ export default function PredictPage() {
     }
   }, [])
 
-  const filtered = markets.filter((m) => {
-    const statusOk =
-      filter === 'open' ? m.status === 'Pending'
-      : filter === 'resolved' ? m.status === 'Resolved' || m.status === 'Voided'
-      : true
-    return statusOk && (category === 'all' || m.category === category)
-  })
+  const filtered = markets
+    .filter((m) => {
+      const statusOk =
+        filter === 'open' ? m.status === 'Pending'
+        : filter === 'resolved' ? m.status === 'Resolved' || m.status === 'Voided'
+        : true
+      return statusOk && (category === 'all' || m.category === category)
+    })
+    // Soonest close first, with still-open markets ahead of settled ones.
+    .sort((a, b) => {
+      const at = a.status === 'Resolved' || a.status === 'Voided'
+      const bt = b.status === 'Resolved' || b.status === 'Voided'
+      if (at !== bt) return at ? 1 : -1
+      return new Date(a.resolve_at).getTime() - new Date(b.resolve_at).getTime()
+    })
 
   return (
     <>

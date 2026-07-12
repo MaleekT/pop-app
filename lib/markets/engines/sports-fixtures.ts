@@ -6,12 +6,16 @@
 
 const TSDB_BASE = 'https://www.thesportsdb.com/api/v1/json/3'
 
+// TheSportsDB tags World Cup finals matches with a league name containing "World Cup".
+const WORLD_CUP = /world cup/i
+
 export type Sport = 'football' | 'basketball'
 
 export interface FollowedTeam {
   name: string
   tsdbId: string // TheSportsDB team id
   sport: Sport
+  kind?: 'national' | 'club' // football only: national teams list World Cup matches only
 }
 
 export interface UpcomingFixture {
@@ -28,9 +32,10 @@ interface TsdbNextEvent {
   strAwayTeam: string | null
   dateEvent: string | null
   strTime: string | null
+  strLeague: string | null
 }
 
-async function fetchTeamFixtures(team: FollowedTeam, perTeam: number): Promise<UpcomingFixture[]> {
+async function fetchTeamFixtures(team: FollowedTeam, perTeam: number, maxFootballMs: number): Promise<UpcomingFixture[]> {
   try {
     const res = await fetch(`${TSDB_BASE}/eventsnext.php?id=${encodeURIComponent(team.tsdbId)}`, {
       headers: { Accept: 'application/json' },
@@ -49,6 +54,10 @@ async function fetchTeamFixtures(team: FollowedTeam, perTeam: number): Promise<U
         const iso = /[Z+]/.test(time) ? raw : `${raw}Z`
         const ts = Date.parse(iso)
         if (isNaN(ts) || ts <= now) return []
+        // Keep the board timely: skip football fixtures too far out.
+        if (team.sport === 'football' && ts > now + maxFootballMs) return []
+        // National teams list World Cup matches only (drop friendlies, qualifiers, Nations League).
+        if (team.sport === 'football' && team.kind === 'national' && !WORLD_CUP.test(e.strLeague ?? '')) return []
         return [{ id: `tsdb:${e.idEvent}`, homeTeam: e.strHomeTeam, awayTeam: e.strAwayTeam, date: iso, sport: team.sport }]
       })
       .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
@@ -60,8 +69,8 @@ async function fetchTeamFixtures(team: FollowedTeam, perTeam: number): Promise<U
 
 // Upcoming fixtures across all followed teams, deduped by fixture id (a match between two
 // followed teams would otherwise appear twice).
-export async function fetchUpcomingFixtures(followed: FollowedTeam[], perTeam: number): Promise<UpcomingFixture[]> {
-  const lists = await Promise.all(followed.map((t) => fetchTeamFixtures(t, perTeam)))
+export async function fetchUpcomingFixtures(followed: FollowedTeam[], perTeam: number, maxFootballMs: number): Promise<UpcomingFixture[]> {
+  const lists = await Promise.all(followed.map((t) => fetchTeamFixtures(t, perTeam, maxFootballMs)))
   const seen = new Set<string>()
   const out: UpcomingFixture[] = []
   for (const list of lists) {

@@ -33,7 +33,7 @@ export default function ParlayPage() {
   useEffect(() => {
     fetch('/api/markets?status=Pending')
       .then((r) => r.json())
-      .then((d: MarketRow[]) => setMarkets(Array.isArray(d) ? d.filter((m) => new Date(m.resolve_at).getTime() > Date.now()) : []))
+      .then((d: MarketRow[]) => setMarkets(Array.isArray(d) ? d.filter((m) => new Date(m.resolve_at).getTime() > Date.now()).sort((a, b) => new Date(a.resolve_at).getTime() - new Date(b.resolve_at).getTime()) : []))
       .catch(() => {})
   }, [])
 

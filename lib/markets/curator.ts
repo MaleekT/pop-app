@@ -5,7 +5,7 @@ import { createMarketsClient } from '@/lib/markets/supabase'
 import { PREDICT_MARKET_CONTRACT, predictMarketAbi, USDC } from '@/lib/predict/contracts'
 import { fetchSpotPrice } from '@/lib/markets/engines/crypto-price'
 import { marketDefinition, deriveOutcomes, asUTC } from '@/lib/markets/definition'
-import { CRYPTO_COINS, PRICE_BANDS, HORIZONS, TARGET_OPEN_PER_COIN, MAX_CREATES_PER_RUN, SPORTS_FOLLOW, TARGET_OPEN_SPORTS, FIXTURES_PER_TEAM, type CryptoCoin, type PriceBand, type Horizon } from '@/lib/markets/curator-config'
+import { CRYPTO_COINS, PRICE_BANDS, HORIZONS, TARGET_OPEN_PER_COIN, MAX_CREATES_PER_RUN, SPORTS_FOLLOW, TARGET_OPEN_SPORTS, FIXTURES_PER_TEAM, FOOTBALL_MAX_DAYS, type CryptoCoin, type PriceBand, type Horizon } from '@/lib/markets/curator-config'
 import type { MarketRow } from '@/lib/markets/db.types'
 import { erc20Abi } from '@/lib/contracts'
 import { SEED_PER_OUTCOME } from '@/lib/markets/bankroll-config'
@@ -316,7 +316,7 @@ export async function runCurator(): Promise<CuratorResult> {
   let sportsCandidates: MarketCandidate[] = []
   const openSports = open.filter((m) => m.category === 'sports').length
   if (SPORTS_FOLLOW.length > 0 && openSports < TARGET_OPEN_SPORTS) {
-    const fixtures = await fetchUpcomingFixtures(SPORTS_FOLLOW, FIXTURES_PER_TEAM)
+    const fixtures = await fetchUpcomingFixtures(SPORTS_FOLLOW, FIXTURES_PER_TEAM, FOOTBALL_MAX_DAYS * 24 * MS_PER_HOUR)
     sportsCandidates = generateSportsCandidates({
       fixtures,
       existingFixtureIds: openSportsFixtureIds(open),

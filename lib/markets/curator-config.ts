@@ -52,17 +52,20 @@ export const MAX_CREATES_PER_RUN = 5
 // tournaments like the 2026 World Cup), clubs (domestic season) and NBA (Oct–Jun), so some
 // always have fixtures whatever the season.
 export const SPORTS_FOLLOW: FollowedTeam[] = [
-  { name: 'Spain', tsdbId: '133909', sport: 'football' },
-  { name: 'Brazil', tsdbId: '134496', sport: 'football' },
-  { name: 'Argentina', tsdbId: '134509', sport: 'football' },
-  { name: 'France', tsdbId: '133913', sport: 'football' },
-  { name: 'England', tsdbId: '133914', sport: 'football' },
-  { name: 'Portugal', tsdbId: '133908', sport: 'football' },
-  { name: 'Real Madrid', tsdbId: '133738', sport: 'football' },
-  { name: 'Manchester City', tsdbId: '133613', sport: 'football' },
+  // National teams: only their World Cup matches are listed (no friendlies/qualifiers).
+  { name: 'Spain', tsdbId: '133909', sport: 'football', kind: 'national' },
+  { name: 'Brazil', tsdbId: '134496', sport: 'football', kind: 'national' },
+  { name: 'Argentina', tsdbId: '134509', sport: 'football', kind: 'national' },
+  { name: 'France', tsdbId: '133913', sport: 'football', kind: 'national' },
+  { name: 'England', tsdbId: '133914', sport: 'football', kind: 'national' },
+  { name: 'Portugal', tsdbId: '133908', sport: 'football', kind: 'national' },
+  // Clubs: all of their competitions are listed.
+  { name: 'Real Madrid', tsdbId: '133738', sport: 'football', kind: 'club' },
+  { name: 'Manchester City', tsdbId: '133613', sport: 'football', kind: 'club' },
   { name: 'Los Angeles Lakers', tsdbId: '134867', sport: 'basketball' },
   { name: 'Boston Celtics', tsdbId: '134860', sport: 'basketball' },
 ]
 
 export const TARGET_OPEN_SPORTS = 6 // how many open sports markets to keep alive
 export const FIXTURES_PER_TEAM = 2  // inspect each followed team's next N fixtures
+export const FOOTBALL_MAX_DAYS = 14 // skip football fixtures further out than this (keep the board timely)
