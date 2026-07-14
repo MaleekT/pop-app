@@ -126,7 +126,9 @@ export function categoryPillStyle(category: string): CSSProperties {
 // Predict-owned. definition_text is keccak-hashed on-chain and the resolver depends on it, so it
 // is NEVER rewritten — this only changes what the user reads. (lib/display-name.ts's formatBetTitle
 // targets the PvP bet format, "#tsdb:" and "per CoinGecko", and does not match these strings.)
-const FIXTURE_SUFFIX = /\s*\((?:football|basketball|soccer)\s+fixture\s+[^)]*\)\s*$/i
+// Any sport word, not a fixed list: definition.ts builds this as `(${p.sport || 'sports'} fixture …)`,
+// so an unset sport emits "(sports fixture …)" and a hardcoded list would leak the id straight through.
+const FIXTURE_SUFFIX = /\s*\(\w+\s+fixture\s+[^)]*\)\s*$/i
 const SOURCE_SUFFIX  = /\s*\((?:CoinGecko|TheSportsDB|YouTube[^)]*)\)\s*$/i
 const ISO_DATETIME   = /(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/g
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
