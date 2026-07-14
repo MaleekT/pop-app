@@ -2,11 +2,13 @@
 
 import Link from 'next/link'
 import { MarketStatusBadge } from '@/components/predict/MarketStatusBadge'
-import { categoryLabel, chipStyle, outcomeColor } from '@/components/predict/ui'
-import { formatBetTitle } from '@/lib/display-name'
+import { categoryLabel, categoryPillStyle, outcomeColor, formatMarketTitle } from '@/components/predict/ui'
 import type { MarketRow } from '@/lib/markets/db.types'
 
-export function MarketCard({ market }: { market: MarketRow }) {
+// showStatus is for the Activity tab, where a user tracks their own positions and still needs to see
+// Settled/Cancelled. The board never passes it: every card there is open by definition, so the
+// colour-coded type pill carries the whole header.
+export function MarketCard({ market, showStatus = false }: { market: MarketRow; showStatus?: boolean }) {
   const resolveMs = new Date(market.resolve_at).getTime()
   const bettingOpen = market.status === 'Pending' && resolveMs > Date.now()
 
@@ -34,12 +36,12 @@ export function MarketCard({ market }: { market: MarketRow }) {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <span style={chipStyle}>{categoryLabel(market.category)}</span>
-          <MarketStatusBadge status={market.status} resolveAt={market.resolve_at} />
+          <span style={categoryPillStyle(market.category)}>{categoryLabel(market.category)}</span>
+          {showStatus && <MarketStatusBadge status={market.status} resolveAt={market.resolve_at} />}
         </div>
 
         <p style={{ margin: 0, color: 'var(--color-pop-text)', fontWeight: 600, fontSize: '1rem', lineHeight: 1.4, flex: 1 }}>
-          {formatBetTitle(market.definition_text)}
+          {formatMarketTitle(market.definition_text)}
         </p>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

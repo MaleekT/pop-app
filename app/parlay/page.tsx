@@ -9,10 +9,9 @@ import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { AppNav } from '@/components/AppNav'
 import { UsdcAmount } from '@/components/UsdcAmount'
 import { PredictSubNav } from '@/components/predict/PredictSubNav'
-import { cardStyle, ctaStyle, inputStyle, outcomeColor, friendlyTxError } from '@/components/predict/ui'
+import { cardStyle, ctaStyle, inputStyle, outcomeColor, formatMarketTitle, friendlyTxError } from '@/components/predict/ui'
 import { PARLAY_CONTRACT, parlayAbi, USDC } from '@/lib/predict/contracts'
 import { erc20Abi } from '@/lib/contracts'
-import { formatBetTitle } from '@/lib/display-name'
 import type { MarketRow, ParlayRow } from '@/lib/markets/db.types'
 
 const ODDS_SCALE = 1_000_000n
@@ -130,7 +129,7 @@ export default function ParlayPage() {
             ) : (
               markets.map((m) => (
                 <div key={m.on_chain_id} style={cardStyle}>
-                  <p style={{ margin: '0 0 12px', fontWeight: 600, fontSize: '0.95rem', lineHeight: 1.4 }}>{formatBetTitle(m.definition_text)}</p>
+                  <p style={{ margin: '0 0 12px', fontWeight: 600, fontSize: '0.95rem', lineHeight: 1.4 }}>{formatMarketTitle(m.definition_text)}</p>
                   <div style={{ display: 'grid', gridTemplateColumns: `repeat(${m.outcomes.length}, 1fr)`, gap: 8 }}>
                     {m.outcomes.map((label, i) => {
                       const active = slip[m.on_chain_id] === i

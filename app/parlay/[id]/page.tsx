@@ -7,9 +7,8 @@ import { parseEventLogs } from 'viem'
 import { usePublicClient, useWriteContract } from 'wagmi'
 import { AppNav } from '@/components/AppNav'
 import { UsdcAmount } from '@/components/UsdcAmount'
-import { backBtnStyle, cardStyle, ctaStyle, outcomeColor, friendlyTxError } from '@/components/predict/ui'
+import { backBtnStyle, cardStyle, ctaStyle, outcomeColor, formatMarketTitle, friendlyTxError } from '@/components/predict/ui'
 import { PARLAY_CONTRACT, parlayAbi, PARLAY_STATUS } from '@/lib/predict/contracts'
-import { formatBetTitle } from '@/lib/display-name'
 import type { MarketRow, ParlayRow } from '@/lib/markets/db.types'
 
 const ODDS_SCALE = 1_000_000n
@@ -121,7 +120,7 @@ export default function ParlayTicketPage() {
               return (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderTop: i > 0 ? '1px solid var(--color-pop-surface-2)' : 'none', paddingTop: i > 0 ? 12 : 0 }}>
                   <div style={{ minWidth: 0 }}>
-                    <p style={{ margin: '0 0 4px', fontSize: '0.9rem', color: 'var(--color-pop-text)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m ? formatBetTitle(m.definition_text) : `Market #${leg.marketOnChainId}`}</p>
+                    <p style={{ margin: '0 0 4px', fontSize: '0.9rem', color: 'var(--color-pop-text)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m ? formatMarketTitle(m.definition_text) : `Market #${leg.marketOnChainId}`}</p>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.82rem' }}>
                       <span style={{ width: 8, height: 8, borderRadius: 2, background: outcomeColor(leg.outcomeIndex) }} />
                       <span style={{ color: 'var(--color-pop-muted)' }}>Your pick: <span style={{ color: 'var(--color-pop-text)', fontWeight: 600 }}>{label}</span></span>

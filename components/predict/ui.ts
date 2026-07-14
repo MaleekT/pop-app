@@ -93,3 +93,52 @@ export const chipStyle: CSSProperties = {
   borderRadius: 'var(--radius-pill)',
   padding: '2px 10px',
 }
+
+// ── Category (type) pill ─────────────────────────────────────────────────────
+// Colour-coded per market type, matching the Type filter on the board.
+const CATEGORY_COLORS: Record<string, string> = {
+  crypto:  '#F7931A',
+  sports:  '#22C55E',
+  youtube: '#60A5FA',
+}
+
+export function categoryColor(category: string): string {
+  return CATEGORY_COLORS[category] ?? '#A1A1AA'
+}
+
+export function categoryPillStyle(category: string): CSSProperties {
+  const c = categoryColor(category)
+  return {
+    color: c,
+    backgroundColor: `${c}1f`,
+    border: `1px solid ${c}33`,
+    borderRadius: 'var(--radius-pill)',
+    padding: '2px 10px',
+    fontSize: '0.72rem',
+    fontWeight: 700,
+    fontFamily: 'var(--font-mono)',
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+  }
+}
+
+// ── Title formatting ─────────────────────────────────────────────────────────
+// Predict-owned. definition_text is keccak-hashed on-chain and the resolver depends on it, so it
+// is NEVER rewritten — this only changes what the user reads. (lib/display-name.ts's formatBetTitle
+// targets the PvP bet format, "#tsdb:" and "per CoinGecko", and does not match these strings.)
+// Any sport word, not a fixed list: definition.ts builds this as `(${p.sport || 'sports'} fixture …)`,
+// so an unset sport emits "(sports fixture …)" and a hardcoded list would leak the id straight through.
+const FIXTURE_SUFFIX = /\s*\(\w+\s+fixture\s+[^)]*\)\s*$/i
+const SOURCE_SUFFIX  = /\s*\((?:CoinGecko|TheSportsDB|YouTube[^)]*)\)\s*$/i
+const ISO_DATETIME   = /(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/g
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+export function formatMarketTitle(definitionText: string): string {
+  return definitionText
+    .replace(FIXTURE_SUFFIX, '')
+    .replace(SOURCE_SUFFIX, '')
+    .replace(ISO_DATETIME, (_full, _year, month: string, day: string, hhmm: string) =>
+      `${MONTHS[Number(month) - 1] ?? month} ${Number(day)}, ${hhmm}`)
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}

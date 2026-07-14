@@ -40,12 +40,19 @@ contract PredictMarket is ReentrancyGuard {
     mapping(uint256 => Market) public markets;
 
     mapping(uint256 => mapping(uint8 => uint256)) public pool;      // id => outcome => total staked
-    mapping(uint256 => uint256) public totalPot;                    // id => sum of all pools
+    // The payout pot and the sum of the outcome pools are deliberately separate. A deposit raises
+    // both; a sponsorship raises only totalPot. That lets a sponsor add prize money without touching
+    // any pool, so the odds (pool ratios) cannot move while the payout multiplier
+    // (totalPot / winningPool) rises for every bettor.
+    mapping(uint256 => uint256) public totalPot;                    // id => deposits + sponsorship (what winners split)
+    mapping(uint256 => uint256) public poolSum;                     // id => sum of the outcome pools (deposits only)
     mapping(uint256 => mapping(uint8 => mapping(address => uint256))) public staked; // id => outcome => user
+    mapping(uint256 => mapping(address => uint256)) public sponsored; // id => sponsor => amount (reclaimable on void)
     mapping(uint256 => mapping(address => bool)) public claimed;    // id => user => claimed or refunded
 
     event MarketCreated(uint256 indexed id, bytes32 definitionHash, uint64 resolveAt, uint8 outcomeCount);
     event Deposited(uint256 indexed id, address indexed user, uint8 indexed outcome, uint256 amount);
+    event Sponsored(uint256 indexed id, address indexed sponsor, uint256 amount);
     event OutcomeProposed(uint256 indexed id, uint8 indexed outcome, bytes32 evidenceHash);
     event MarketChallenged(uint256 indexed id, address indexed by);
     event MarketResolved(uint256 indexed id, uint8 indexed outcome);
@@ -104,11 +111,33 @@ contract PredictMarket is ReentrancyGuard {
         if (amount == 0) revert ZeroAmount();
 
         pool[id][outcome] += amount;
+        poolSum[id] += amount;
         totalPot[id] += amount;
         staked[id][outcome][msg.sender] += amount;
 
         USDC.safeTransferFrom(msg.sender, address(this), amount);
         emit Deposited(id, msg.sender, outcome, amount);
+    }
+
+    // Sponsor the prize pot: adds USDC that the winners split, without joining any outcome's pool.
+    // The sponsor takes no position and has no claim on a resolved market, so this can never shift
+    // the odds (the pool ratios are untouched) and cannot be used to favour a side. It only raises
+    // totalPot, which raises every bettor's payout multiplier (totalPot / winningPool).
+    // Permissionless: a pure gift with no attack surface, and reclaimable via claimRefund on a void.
+    function sponsor(uint256 id, uint128 amount) external nonReentrant {
+        Market storage m = markets[id];
+        if (m.status != Status.Pending) revert WrongStatus();
+        // Mirrors deposit(): sponsorship is only accepted while betting is open. This also rejects a
+        // market id that was never created, whose zero-struct would otherwise read as Pending with
+        // resolveAt == 0 and let a sponsor strand funds in a market that can never settle.
+        if (block.timestamp >= m.resolveAt) revert BettingClosed();
+        if (amount == 0) revert ZeroAmount();
+
+        totalPot[id] += amount;
+        sponsored[id][msg.sender] += amount;
+
+        USDC.safeTransferFrom(msg.sender, address(this), amount);
+        emit Sponsored(id, msg.sender, amount);
     }
 
     // ── Resolution ─────────────────────────────────────────────────────────────
@@ -208,6 +237,12 @@ contract PredictMarket is ReentrancyGuard {
         for (uint8 o; o < count; ++o) {
             refund += staked[id][o][msg.sender];
         }
+        // A void returns sponsorship too, so prize money is never stranded on a cancelled market.
+        uint256 sponsorship = sponsored[id][msg.sender];
+        if (sponsorship > 0) {
+            sponsored[id][msg.sender] = 0;
+            refund += sponsorship;
+        }
         if (refund == 0) revert NothingToClaim();
 
         claimed[id][msg.sender] = true;
@@ -217,8 +252,10 @@ contract PredictMarket is ReentrancyGuard {
 
     // ── Views (used by Parlay and the frontend) ──────────────────────────────────
 
-    function poolInfo(uint256 id, uint8 outcome) external view returns (uint256 sidePool, uint256 pot) {
-        return (pool[id][outcome], totalPot[id]);
+    // The UNSPONSORED ratio: this side's pool against the sum of the pools. Parlay prices its legs
+    // off this, so sponsoring a market cannot inflate parlay multipliers and drain the house pool.
+    function poolInfo(uint256 id, uint8 outcome) external view returns (uint256 sidePool, uint256 pools) {
+        return (pool[id][outcome], poolSum[id]);
     }
 
     function resultOf(uint256 id) external view returns (Status status, uint8 resolvedOutcome) {

@@ -165,7 +165,7 @@ export default function ActivityPage() {
                     <p style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-pop-muted)' }}>No {predTab} predictions.</p>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-                      {shownPositions.map((m) => <MarketCard key={`${m.contract_address}-${m.on_chain_id}`} market={m} />)}
+                      {shownPositions.map((m) => <MarketCard key={`${m.contract_address}-${m.on_chain_id}`} market={m} showStatus />)}
                     </div>
                   )}
                 </>

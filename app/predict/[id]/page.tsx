@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { parseUnits, zeroAddress, keccak256, toHex } from 'viem'
@@ -10,12 +10,11 @@ import { UsdcAmount } from '@/components/UsdcAmount'
 import { OddsBar } from '@/components/predict/OddsBar'
 import { MarketStatusBadge } from '@/components/predict/MarketStatusBadge'
 import {
-  backBtnStyle, cardStyle, ctaStyle, secondaryCtaStyle, inputStyle, chipStyle,
-  categoryLabel, outcomeColor, friendlyTxError,
+  backBtnStyle, cardStyle, ctaStyle, secondaryCtaStyle, inputStyle,
+  categoryLabel, categoryPillStyle, outcomeColor, impliedPct, formatMarketTitle, friendlyTxError,
 } from '@/components/predict/ui'
 import { PREDICT_MARKET_CONTRACT, predictMarketAbi, MARKET_STATUS } from '@/lib/predict/contracts'
 import { USDC, erc20Abi } from '@/lib/contracts'
-import { formatBetTitle } from '@/lib/display-name'
 import type { MarketRow, MarketStatus } from '@/lib/markets/db.types'
 
 const BASE = { address: PREDICT_MARKET_CONTRACT, abi: predictMarketAbi } as const
@@ -50,12 +49,15 @@ export default function MarketDetailPage() {
   const user = address ?? zeroAddress
   const enabled = Boolean(market)
 
-  const { data: potData, refetch: refetchPot } = useReadContract({ ...BASE, functionName: 'totalPot', args: [onChainId], query: { enabled, refetchInterval: 20_000 } })
+  const { data: potData, refetch: refetchPot } = useReadContract({ ...BASE, functionName: 'totalPot', args: [onChainId], query: { enabled, refetchInterval: 15_000 } })
+  // Sum of the outcome pools, EXCLUDING sponsorship. The odds are derived from this, never from
+  // totalPot, so a sponsored pot cannot distort the percentages.
+  const { data: poolSumData, refetch: refetchPoolSum } = useReadContract({ ...BASE, functionName: 'poolSum', args: [onChainId], query: { enabled, refetchInterval: 15_000 } })
   const { data: chainData, refetch: refetchChain } = useReadContract({ ...BASE, functionName: 'getMarket', args: [onChainId], query: { enabled } })
   const { data: claimedData, refetch: refetchClaimed } = useReadContract({ ...BASE, functionName: 'claimed', args: [onChainId, user], query: { enabled } })
   const { data: poolsData, refetch: refetchPools } = useReadContracts({
     contracts: outcomes.map((_, i) => ({ ...BASE, functionName: 'pool' as const, args: [onChainId, i] })),
-    query: { enabled, refetchInterval: 20_000 },
+    query: { enabled, refetchInterval: 15_000 },
   })
   const { data: stakesData, refetch: refetchStakes } = useReadContracts({
     contracts: outcomes.map((_, i) => ({ ...BASE, functionName: 'staked' as const, args: [onChainId, i, user] })),
@@ -64,8 +66,8 @@ export default function MarketDetailPage() {
   const { data: ownerData } = useReadContract({ ...BASE, functionName: 'owner', query: { enabled } })
 
   const refetchAll = useCallback(() => {
-    refetchPot(); refetchChain(); refetchClaimed(); refetchPools(); refetchStakes(); loadMarket()
-  }, [refetchPot, refetchChain, refetchClaimed, refetchPools, refetchStakes, loadMarket])
+    refetchPot(); refetchPoolSum(); refetchChain(); refetchClaimed(); refetchPools(); refetchStakes(); loadMarket()
+  }, [refetchPot, refetchPoolSum, refetchChain, refetchClaimed, refetchPools, refetchStakes, loadMarket])
 
   if (loading) {
     return (<><AppNav /><main style={{ maxWidth: 640, margin: '0 auto', padding: '48px 24px' }}><p style={{ color: 'var(--color-pop-muted)' }}>Loading market…</p></main></>)
@@ -83,6 +85,7 @@ export default function MarketDetailPage() {
   const status: MarketStatus = chainMarket ? MARKET_STATUS[chainMarket.status] ?? market.status : market.status
   const resolvedOutcome = chainMarket ? chainMarket.resolvedOutcome : market.resolved_outcome
   const totalPot = (potData as bigint | undefined) ?? 0n
+  const poolSum = (poolSumData as bigint | undefined) ?? 0n
   const pools = outcomes.map((_, i) => (poolsData?.[i]?.result as bigint | undefined) ?? 0n)
   const userStakes = outcomes.map((_, i) => (stakesData?.[i]?.result as bigint | undefined) ?? 0n)
   const totalUserStake = userStakes.reduce((a, b) => a + b, 0n)
@@ -97,7 +100,10 @@ export default function MarketDetailPage() {
   const isOwner = Boolean(address && ownerData && address.toLowerCase() === (ownerData as string).toLowerCase())
   // Removable only before anyone else pools in: the owner is the sole depositor (or the pool
   // is empty) and no open parlay references it. The owner's own seed refunds via the cron.
-  const removable = isOwner && status === 'Pending' && totalPot === totalUserStake && parlayRefs === 0
+  // Compare against poolSum (deposits), NOT totalPot (deposits + sponsorship). Using totalPot would
+  // mean the owner sponsoring their own market silently made it unremovable, since sponsorship is
+  // not someone else's bet — it is the owner's own money, refunded to them by the void.
+  const removable = isOwner && status === 'Pending' && poolSum === totalUserStake && parlayRefs === 0
 
   // One plain-language line per state, so a viewer always knows what happened and what is next.
   const winningLabel = resolvedOutcome != null ? outcomes[resolvedOutcome] : undefined
@@ -115,90 +121,245 @@ export default function MarketDetailPage() {
   return (
     <>
       <AppNav />
-      <main style={{ maxWidth: 640, margin: '0 auto', padding: '40px 24px 96px' }}>
+      <main style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px 96px' }}>
         <Link href="/predict" style={{ ...backBtnStyle, display: 'inline-block', textDecoration: 'none' }}>← Back to markets</Link>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <span style={chipStyle}>{categoryLabel(market.category)}</span>
-          <MarketStatusBadge status={status} resolveAt={market.resolve_at} />
-        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
+          <div style={{ flex: '1 1 420px', minWidth: 0 }}>
 
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, lineHeight: 1.35, margin: '0 0 24px' }}>
-          {formatBetTitle(market.definition_text)}
-        </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <span style={categoryPillStyle(market.category)}>{categoryLabel(market.category)}</span>
+              <MarketStatusBadge status={status} resolveAt={market.resolve_at} />
+            </div>
 
-        {statusBanner && (
-          <div style={{ ...cardStyle, marginBottom: 20, padding: '14px 18px', border: `1px solid ${statusBanner.accent ? 'rgba(34,197,94,0.4)' : 'var(--color-pop-surface-2)'}` }}>
-            <p style={{ margin: 0, color: statusBanner.accent ? 'var(--color-pop-win)' : 'var(--color-pop-muted)', fontSize: '0.9rem', lineHeight: 1.5 }}>
-              {statusBanner.text}
-            </p>
-          </div>
-        )}
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 700, lineHeight: 1.35, margin: '0 0 24px' }}>
+              {formatMarketTitle(market.definition_text)}
+            </h1>
 
-        <div style={{ ...cardStyle, marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18 }}>
-            <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem' }}>Total pool</span>
-            <span style={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--color-pop-accent)' }}><UsdcAmount amount={totalPot} /></span>
-          </div>
-          <OddsBar outcomes={outcomes} pools={pools} total={totalPot} resolvedOutcome={status === 'Resolved' ? resolvedOutcome : null} />
-        </div>
+            {statusBanner && (
+              <div style={{ ...cardStyle, marginBottom: 20, padding: '14px 18px', border: `1px solid ${statusBanner.accent ? 'rgba(34,197,94,0.4)' : 'var(--color-pop-surface-2)'}` }}>
+                <p style={{ margin: 0, color: statusBanner.accent ? 'var(--color-pop-win)' : 'var(--color-pop-muted)', fontSize: '0.9rem', lineHeight: 1.5 }}>
+                  {statusBanner.text}
+                </p>
+              </div>
+            )}
 
-        {isOwner && status === 'Pending' && (
-          <OwnerActions market={market} marketId={onChainId} removable={removable} />
-        )}
+            <div style={{ ...cardStyle, marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18 }}>
+                <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem' }}>Prize pool</span>
+                <span style={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--color-pop-accent)' }}><UsdcAmount amount={totalPot} /></span>
+              </div>
+              {/* Odds come off the pools, not the pot: sponsorship lifts the pot without touching a pool. */}
+              <OddsBar outcomes={outcomes} pools={pools} total={poolSum} resolvedOutcome={status === 'Resolved' ? resolvedOutcome : null} />
+            </div>
 
-        {totalUserStake > 0n && (
-          <div style={{ ...cardStyle, marginBottom: 20 }}>
-            <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem' }}>Your position</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
-              {outcomes.map((label, i) => userStakes[i] > 0n && (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 2, background: outcomeColor(i) }} />
-                    <span style={{ color: 'var(--color-pop-text)', fontWeight: 600 }}>{label}</span>
-                  </span>
-                  <span style={{ color: 'var(--color-pop-text)' }}><UsdcAmount amount={userStakes[i]} /></span>
+            {isOwner && status === 'Pending' && (
+              <OwnerActions market={market} marketId={onChainId} removable={removable} />
+            )}
+
+            {totalUserStake > 0n && (
+              <div style={{ ...cardStyle, marginBottom: 20 }}>
+                <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem' }}>
+                  {isOwner ? 'Liquidity you seeded' : 'Your position'}
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+                  {outcomes.map((label, i) => userStakes[i] > 0n && (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 9, height: 9, borderRadius: 2, background: outcomeColor(i) }} />
+                        <span style={{ color: 'var(--color-pop-text)', fontWeight: 600 }}>{label}</span>
+                      </span>
+                      <span style={{ color: 'var(--color-pop-text)' }}><UsdcAmount amount={userStakes[i]} /></span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+
+            {/* The owner is a neutral liquidity sponsor: they top up the prize pot, they never back a side. */}
+            {bettingOpen && (isOwner ? (
+              <SponsorPanel marketId={onChainId} onDone={refetchAll} />
+            ) : (
+              <DepositPanel
+                marketId={onChainId}
+                onChainIdStr={market.on_chain_id}
+                outcomes={outcomes}
+                lockedOutcome={userOutcome >= 0 ? userOutcome : null}
+                onDone={refetchAll}
+              />
+            ))}
+
+            <ClaimActions
+              status={status}
+              resolvedOutcome={resolvedOutcome}
+              userStakes={userStakes}
+              totalUserStake={totalUserStake}
+              hasClaimed={hasClaimed}
+              marketId={onChainId}
+              onDone={refetchAll}
+            />
+
+            {evidence?.sourceUrl && (
+              <div style={{ ...cardStyle, marginTop: 20 }}>
+                <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem' }}>Resolution evidence</span>
+                <div style={{ marginTop: 10, fontSize: '0.85rem', lineHeight: 1.6 }}>
+                  {evidence.rawValue && <div style={{ color: 'var(--color-pop-text)' }}>Value: {evidence.rawValue}</div>}
+                  {evidence.rawStatus && <div style={{ color: 'var(--color-pop-text)' }}>Status: {evidence.rawStatus}</div>}
+                  <a href={evidence.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-pop-accent)', wordBreak: 'break-all' }}>
+                    {evidence.sourceUrl}
+                  </a>
+                </div>
+              </div>
+            )}
+
           </div>
-        )}
 
-        {bettingOpen && (
-          <DepositPanel
-            marketId={onChainId}
-            onChainIdStr={market.on_chain_id}
-            outcomes={outcomes}
-            lockedOutcome={userOutcome >= 0 ? userOutcome : null}
-            onDone={refetchAll}
-          />
-        )}
-
-        <ClaimActions
-          status={status}
-          resolvedOutcome={resolvedOutcome}
-          userStakes={userStakes}
-          totalUserStake={totalUserStake}
-          hasClaimed={hasClaimed}
-          marketId={onChainId}
-          onDone={refetchAll}
-        />
-
-        {evidence?.sourceUrl && (
-          <div style={{ ...cardStyle, marginTop: 20 }}>
-            <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem' }}>Resolution evidence</span>
-            <div style={{ marginTop: 10, fontSize: '0.85rem', lineHeight: 1.6 }}>
-              {evidence.rawValue && <div style={{ color: 'var(--color-pop-text)' }}>Value: {evidence.rawValue}</div>}
-              {evidence.rawStatus && <div style={{ color: 'var(--color-pop-text)' }}>Status: {evidence.rawStatus}</div>}
-              <a href={evidence.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-pop-accent)', wordBreak: 'break-all' }}>
-                {evidence.sourceUrl}
-              </a>
-            </div>
-          </div>
-        )}
-
+          {/* Side rail: what this bettor stands to win, live off the pool. The owner has no side, so no
+              card. Only while the market is unsettled — once it resolves, ClaimActions states what you
+              actually won or lost, and a "potential payout" beside it would be a lie to a losing bettor. */}
+          {!isOwner && totalUserStake > 0n && status === 'Pending' && (
+            <aside style={{ flex: '0 1 320px', minWidth: 280, position: 'sticky', top: 84 }}>
+              <PayoutCard
+                outcomes={outcomes}
+                pools={pools}
+                poolSum={poolSum}
+                totalPot={totalPot}
+                userStakes={userStakes}
+              />
+            </aside>
+          )}
+        </div>
       </main>
     </>
+  )
+}
+
+// What the bettor gets back if their side wins, at the pool as it stands right now.
+// POP is parimutuel (unlike Polymarket, which locks a price at buy), so this is provisional:
+// it moves with every new deposit and is only final once the market resolves.
+function PayoutCard({ outcomes, pools, poolSum, totalPot, userStakes }: {
+  outcomes: string[]
+  pools: bigint[]
+  poolSum: bigint
+  totalPot: bigint
+  userStakes: bigint[]
+}) {
+  // One side per user, so the first funded outcome is the whole position.
+  const side = userStakes.findIndex((s) => s > 0n)
+  if (side < 0) return null
+
+  const stake = userStakes[side]
+  const sidePool = pools[side] ?? 0n
+  const pct = impliedPct(sidePool, poolSum)
+  // Parimutuel: winners split the whole pot pro-rata to their share of the winning pool.
+  const payout = sidePool > 0n ? (stake * totalPot) / sidePool : 0n
+  const profit = payout > stake ? payout - stake : 0n
+  const multiplier = sidePool > 0n ? Number((totalPot * 100n) / sidePool) / 100 : 0
+
+  const row = (label: string, value: ReactNode) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+      <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.82rem' }}>{label}</span>
+      <span style={{ fontSize: '0.9rem', textAlign: 'right' }}>{value}</span>
+    </div>
+  )
+
+  return (
+    <div style={{ ...cardStyle, padding: 20 }}>
+      <span style={{ fontSize: '0.95rem', fontWeight: 700 }}>Your payout</span>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 11, marginTop: 14 }}>
+        {row('You backed', (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: outcomeColor(side) }} />
+            <span style={{ color: outcomeColor(side), fontWeight: 700 }}>{outcomes[side]}</span>
+          </span>
+        ))}
+        {row('Deposited', <UsdcAmount amount={stake} />)}
+        {row('Odds', <span style={{ fontFamily: 'var(--font-mono)' }}>{pct.toFixed(1)}% · {multiplier.toFixed(2)}x</span>)}
+
+        <div style={{ height: 1, background: 'var(--color-pop-surface-2)', margin: '3px 0' }} />
+
+        {row('Potential payout', (
+          <span style={{ color: 'var(--color-pop-win)', fontWeight: 700, fontSize: '1.05rem' }}><UsdcAmount amount={payout} /></span>
+        ))}
+        {row('Profit', (
+          <span style={{ color: 'var(--color-pop-accent)', fontWeight: 600 }}>+<UsdcAmount amount={profit} /></span>
+        ))}
+      </div>
+
+      <p style={{ margin: '14px 0 0', color: 'var(--color-pop-muted)', fontSize: '0.72rem', lineHeight: 1.55 }}>
+        At current pool. This is a pooled market: your payout moves as money comes in on either side,
+        and is only final once the market resolves.
+      </p>
+    </div>
+  )
+}
+
+// Owner-only. Adds prize money to the pot WITHOUT joining a side, so the odds cannot move and the
+// owner takes no position. It exists to lift payouts when liquidity is thin.
+function SponsorPanel({ marketId, onDone }: { marketId: bigint; onDone: () => void }) {
+  const { address } = useAccount()
+  const publicClient = usePublicClient()
+  const { writeContractAsync } = useWriteContract()
+  const [amount, setAmount] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSponsor() {
+    if (!address || !publicClient) return
+    setError('')
+
+    let raw: bigint
+    try {
+      raw = parseUnits(amount, 6)
+    } catch {
+      setError('Enter a valid amount.')
+      return
+    }
+    if (raw <= 0n) { setError('Enter an amount greater than zero.'); return }
+
+    try {
+      setBusy(true)
+      const approveHash = await writeContractAsync({
+        address: USDC, abi: erc20Abi, functionName: 'approve', args: [PREDICT_MARKET_CONTRACT, raw],
+      })
+      await publicClient.waitForTransactionReceipt({ hash: approveHash })
+
+      const hash = await writeContractAsync({ ...BASE, functionName: 'sponsor', args: [marketId, raw] })
+      await publicClient.waitForTransactionReceipt({ hash })
+
+      setAmount('')
+      onDone()
+    } catch (e) {
+      setError(friendlyTxError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const disabled = busy || !amount
+
+  return (
+    <div style={{ ...cardStyle, marginBottom: 20 }}>
+      <span style={{ fontSize: '0.95rem', fontWeight: 700 }}>Sponsor the pot</span>
+      <p style={{ color: 'var(--color-pop-muted)', fontSize: '0.82rem', margin: '10px 0 14px', lineHeight: 1.6 }}>
+        Adds prize money that the winners split. It joins neither side, so the odds do not move and you
+        take no position — it simply raises every bettor&apos;s payout. Refunded to you if the market is cancelled.
+      </p>
+      <input
+        type="number" min="0" step="0.01" placeholder="Amount (USDC)"
+        value={amount} onChange={(e) => setAmount(e.target.value)}
+        style={{ ...inputStyle, marginBottom: 12 }}
+      />
+      {error && <p style={{ color: 'var(--color-pop-danger)', fontSize: '0.85rem', margin: '0 0 12px' }}>{error}</p>}
+      <button
+        onClick={handleSponsor}
+        disabled={disabled}
+        style={{ ...ctaStyle, opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}
+      >
+        {busy ? 'Sponsoring…' : 'Approve & sponsor'}
+      </button>
+    </div>
   )
 }
 

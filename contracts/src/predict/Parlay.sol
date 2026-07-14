@@ -18,10 +18,15 @@ contract Parlay is ReentrancyGuard {
     PredictMarket public immutable market;
     address       public immutable owner;
 
-    uint256 public constant ODDS_SCALE = 1e6;                 // 1.000000x
-    uint256 public constant MAX_MULTIPLIER = 50 * ODDS_SCALE;  // payout cap
+    uint256 public constant ODDS_SCALE = 1e6;                  // 1.000000x
+    uint256 public constant MAX_MULTIPLIER = 15 * ODDS_SCALE;  // payout cap
     uint256 public constant MIN_LEGS = 2;
-    uint256 public constant MAX_LEGS = 10;
+    uint256 public constant MAX_LEGS = 5;
+
+    // The house pays 90% of the mathematically fair product, keeping a 10% edge so a modest house
+    // pool stays solvent while a parlay is still worth playing.
+    uint256 public constant HOUSE_MARGIN_NUM = 90;
+    uint256 public constant HOUSE_MARGIN_DEN = 100;
 
     enum Status { Open, Won, Lost, Refunded }
 
@@ -80,16 +85,24 @@ contract Parlay is ReentrancyGuard {
     // defensively clamped to [1x, MAX_MULTIPLIER]: the floor guarantees a leg can never
     // reduce the payout (a local invariant, not one we borrow from the market's pool
     // accounting), and the cap also stops the fold overflowing on a near-empty pool. The
-    // product is capped again.
+    // fair product is then cut by the house margin, floored at 1x, and capped.
     function quote(Leg[] calldata picks) public view returns (uint256 multiplier) {
         uint256 acc = ODDS_SCALE;
         for (uint256 i; i < picks.length; ++i) {
-            (uint256 sidePool, uint256 pot) = market.poolInfo(picks[i].marketId, picks[i].outcome);
-            uint256 legOdds = sidePool == 0 ? MAX_MULTIPLIER : (pot * ODDS_SCALE) / sidePool;
+            // poolInfo returns the UNSPONSORED ratio (side pool vs sum of pools), so prize
+            // sponsorship on a market never inflates a parlay leg, which the house (not the
+            // market pot) would have to cover.
+            (uint256 sidePool, uint256 pools) = market.poolInfo(picks[i].marketId, picks[i].outcome);
+            uint256 legOdds = sidePool == 0 ? MAX_MULTIPLIER : (pools * ODDS_SCALE) / sidePool;
             if (legOdds < ODDS_SCALE) legOdds = ODDS_SCALE;
             if (legOdds > MAX_MULTIPLIER) legOdds = MAX_MULTIPLIER;
             acc = (acc * legOdds) / ODDS_SCALE;
         }
+        acc = (acc * HOUSE_MARGIN_NUM) / HOUSE_MARGIN_DEN;
+        // The 1x floor is REQUIRED, not cosmetic: buyTicket and settle both compute
+        // `reserve = payout - stake` and rely on multiplier >= 1x. Without it the margin could push
+        // a low-odds parlay below 1x and that subtraction would underflow.
+        if (acc < ODDS_SCALE) acc = ODDS_SCALE;
         if (acc > MAX_MULTIPLIER) acc = MAX_MULTIPLIER;
         return acc;
     }
@@ -102,6 +115,11 @@ contract Parlay is ReentrancyGuard {
         for (uint256 i; i < picks.length; ++i) {
             PredictMarket.Market memory m = market.getMarket(picks[i].marketId);
             if (m.status != PredictMarket.Status.Pending) revert MarketNotOpen();
+            // Pending alone is NOT enough. A market whose close time has passed stays Pending until
+            // the resolver proposes an outcome, so without this gate a bettor could parlay a match
+            // that has ALREADY finished, at odds frozen from before the result was known — and the
+            // house, not the market pot, pays parlay wins. Mirrors deposit()'s own resolveAt gate.
+            if (block.timestamp >= m.resolveAt) revert MarketNotOpen();
             if (picks[i].outcome >= m.outcomeCount) revert BadOutcome();
             for (uint256 j = i + 1; j < picks.length; ++j) {
                 if (picks[j].marketId == picks[i].marketId) revert DuplicateMarket();
