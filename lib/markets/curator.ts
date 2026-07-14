@@ -5,7 +5,7 @@ import { createMarketsClient } from '@/lib/markets/supabase'
 import { PREDICT_MARKET_CONTRACT, predictMarketAbi, USDC } from '@/lib/predict/contracts'
 import { fetchSpotPrice } from '@/lib/markets/engines/crypto-price'
 import { marketDefinition, deriveOutcomes, asUTC } from '@/lib/markets/definition'
-import { CRYPTO_COINS, PRICE_BANDS, HORIZONS, TARGET_OPEN_PER_COIN, MAX_CREATES_PER_RUN, SPORTS_FOLLOW, TARGET_OPEN_SPORTS, FIXTURES_PER_TEAM, FOOTBALL_MAX_DAYS, type CryptoCoin, type PriceBand, type Horizon } from '@/lib/markets/curator-config'
+import { CRYPTO_COINS, PRICE_BANDS, HORIZONS, TARGET_OPEN_PER_COIN, MAX_CREATES_PER_RUN, SPORTS_FOLLOW, TARGET_OPEN_SPORTS, FIXTURES_PER_TEAM, FOOTBALL_MAX_DAYS, BOARD_TARGET, BOARD_MIN, type CryptoCoin, type PriceBand, type Horizon } from '@/lib/markets/curator-config'
 import type { MarketRow } from '@/lib/markets/db.types'
 import { erc20Abi } from '@/lib/contracts'
 import { SEED_PER_OUTCOME } from '@/lib/markets/bankroll-config'
@@ -248,6 +248,14 @@ function openSportsFixtureIds(open: MarketRow[]): Set<string> {
   return ids
 }
 
+// Markets the owner created by hand are tagged src='owner' (see app/predict/new). They are still
+// DEDUPED against, so the curator never re-lists a fixture or price slot the owner already listed,
+// but they do NOT COUNT toward the board target: a market you make by hand adds to the board
+// instead of displacing a curated one. Untagged markets are curator-made (the tag postdates them).
+function isCurated(m: MarketRow): boolean {
+  return m.params?.src !== 'owner'
+}
+
 // Keeps a target number of open markets (crypto + sports) alive. Reuses the owner=resolver
 // wallet (createMarket is onlyOwner, and that key already auto-signs resolution txs),
 // so no new trust surface. Rate limited, idempotent (dedup by slot), and isolated.
@@ -294,10 +302,33 @@ export async function runCurator(): Promise<CuratorResult> {
   if (openErr) throw new Error(openErr.message)
   const open = (openData ?? []) as MarketRow[]
 
-  // ── Crypto candidates (only when some coin is below its per-coin target) ──
-  const openByCoin = openCryptoCountByCoin(open)
+  // Only curated markets count toward the board target; the owner's own sit on top of it.
+  const curated = open.filter(isCurated)
+  const boardRoom = BOARD_TARGET - curated.length
+
+  // ── Sports first ────────────────────────────────────────────────────────────
+  // Fixtures are timely and viral, so they get first claim on the board and on the per-run cap.
+  // fetchUpcomingFixtures ranks real competitions above preseason, so a World Cup tie or a league
+  // match is always taken ahead of a July friendly, and friendlies only fill what is left.
+  let sportsCandidates: MarketCandidate[] = []
+  const openSports = curated.filter((m) => m.category === 'sports').length
+  const sportsRoom = Math.min(TARGET_OPEN_SPORTS - openSports, boardRoom)
+  if (SPORTS_FOLLOW.length > 0 && sportsRoom > 0) {
+    const fixtures = await fetchUpcomingFixtures(SPORTS_FOLLOW, FIXTURES_PER_TEAM, FOOTBALL_MAX_DAYS * 24 * MS_PER_HOUR)
+    sportsCandidates = generateSportsCandidates({
+      fixtures,
+      existingFixtureIds: openSportsFixtureIds(open), // dedup against EVERY open market, the owner's included
+      now: Date.now(),
+      limit: sportsRoom,
+    })
+  }
+
+  // ── Crypto fills whatever the board still needs ─────────────────────────────
+  // This is the guaranteed supply (36 slots), so it is what actually holds BOARD_MIN when fixtures
+  // are thin, which out of season is most of the time.
   let cryptoCandidates: MarketCandidate[] = []
-  if (!CRYPTO_COINS.every((c) => (openByCoin[c.id] ?? 0) >= TARGET_OPEN_PER_COIN)) {
+  const cryptoRoom = boardRoom - sportsCandidates.length
+  if (cryptoRoom > 0) {
     const prices: Record<string, number> = {}
     for (const coin of CRYPTO_COINS) {
       const price = await fetchSpotPrice(coin.id)
@@ -305,28 +336,13 @@ export async function runCurator(): Promise<CuratorResult> {
     }
     cryptoCandidates = generateCryptoCandidates({
       prices,
-      existingSlotKeys: openCryptoSlotKeys(open),
-      openCountByCoin: openByCoin,
+      existingSlotKeys: openCryptoSlotKeys(open),      // dedup against EVERY open market
+      openCountByCoin: openCryptoCountByCoin(curated), // ...but count only our own
       now: Date.now(),
-      limit: MAX_CREATES_PER_RUN,
+      limit: cryptoRoom,
     })
   }
 
-  // ── Sports candidates (only when below the open-sports target) ──
-  let sportsCandidates: MarketCandidate[] = []
-  const openSports = open.filter((m) => m.category === 'sports').length
-  if (SPORTS_FOLLOW.length > 0 && openSports < TARGET_OPEN_SPORTS) {
-    const fixtures = await fetchUpcomingFixtures(SPORTS_FOLLOW, FIXTURES_PER_TEAM, FOOTBALL_MAX_DAYS * 24 * MS_PER_HOUR)
-    sportsCandidates = generateSportsCandidates({
-      fixtures,
-      existingFixtureIds: openSportsFixtureIds(open),
-      now: Date.now(),
-      limit: TARGET_OPEN_SPORTS - openSports,
-    })
-  }
-
-  // Sports first: upcoming fixtures (e.g. World Cup matches) are timely and viral, so they
-  // get first claim on the per-run cap; crypto is always available and fills the remainder.
   const candidates = [...sportsCandidates, ...cryptoCandidates].slice(0, MAX_CREATES_PER_RUN)
   if (candidates.length === 0) {
     return { created: 0, results: [{ slot: '-', outcome: 'nothing-to-create' }] }
@@ -336,8 +352,23 @@ export async function runCurator(): Promise<CuratorResult> {
   const walletClient = createWalletClient({ account, chain: arcTestnet, transport: http(rpc) })
 
   const results: CuratorLog[] = []
-  const seedTargets: { id: bigint; outcomeCount: number }[] = []
   let created = 0
+
+  // One approve up front for the run's whole seed budget, so each market can be seeded the instant
+  // it exists. Approving more than we end up spending is harmless: it is the owner's own allowance
+  // to PredictMarket, which only ever pulls inside deposit().
+  const seedBudget = SEED_PER_OUTCOME * BigInt(candidates.reduce((n, c) => n + c.outcomes.length, 0))
+  try {
+    const approveHash = await walletClient.writeContract({
+      address: USDC, abi: erc20Abi, functionName: 'approve', args: [PREDICT_MARKET_CONTRACT, seedBudget],
+    })
+    await publicClient.waitForTransactionReceipt({ hash: approveHash })
+  } catch (approveErr) {
+    // With no allowance nothing can be seeded, and an unseeded market is a broken market. Create
+    // nothing rather than create markets we already know we cannot seed.
+    console.error('curator: seed approve failed; creating nothing this run:', approveErr)
+    return { created: 0, results: [{ slot: 'seed', outcome: 'approve-failed' }] }
+  }
 
   for (const c of candidates) {
     try {
@@ -354,7 +385,24 @@ export async function runCurator(): Promise<CuratorResult> {
         results.push({ slot: c.slotKey, outcome: 'no-event' })
         continue
       }
-      const marketId = log.args.id.toString()
+      const marketIdBn = log.args.id          // already a bigint from parseEventLogs
+      const marketId = marketIdBn.toString()  // the DB mirrors on_chain_id as text
+
+      // Seed EVERY outcome BEFORE mirroring, so a market can never reach the board unseeded.
+      // This ordering is the fix. The old code created and mirrored all the markets first and
+      // seeded them in a second pass, so a run that exhausted its 60s budget left the last market
+      // visible on the board with a 0/0 pool. An empty pool has no odds: it read 0% on the board
+      // and, worse, priced a parlay leg at the cap. A seed failure now aborts this market and the
+      // run, leaving it unmirrored and therefore unbettable rather than broken and live.
+      for (let o = 0; o < c.outcomes.length; o++) {
+        const seedHash = await walletClient.writeContract({
+          address: PREDICT_MARKET_CONTRACT,
+          abi: predictMarketAbi,
+          functionName: 'deposit',
+          args: [marketIdBn, o, SEED_PER_OUTCOME],
+        })
+        await publicClient.waitForTransactionReceipt({ hash: seedHash })
+      }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: insErr } = await (db.from('markets') as any).insert({
@@ -370,54 +418,33 @@ export async function runCurator(): Promise<CuratorResult> {
         status: 'Pending',
       })
       if (insErr) {
-        // The market is live on-chain but the DB mirror failed. Stop the run rather than
-        // create more markets we can't mirror (bounds orphans during a DB write outage).
+        // Live and seeded on-chain, but the mirror failed. Stop rather than create more we cannot
+        // mirror (bounds orphans during a DB write outage).
         console.error(`curator: DB mirror failed for market ${marketId} (${c.slotKey}):`, insErr.message)
         results.push({ slot: c.slotKey, outcome: 'created-mirror-failed', id: marketId })
         break
       }
-      // Counts only fully live markets (on-chain + mirrored); orphans stay in `results`.
+
+      // Counts only markets that are live, SEEDED and mirrored.
       created++
-      seedTargets.push({ id: BigInt(marketId), outcomeCount: c.outcomes.length })
       results.push({ slot: c.slotKey, outcome: 'created', id: marketId })
     } catch (err) {
-      // First failure is almost always gas exhaustion; stop the run rather than hammer.
-      console.error(`curator: createMarket failed for ${c.slotKey}:`, err)
+      // Usually gas exhaustion or the 60s function budget running out. Stop rather than hammer.
+      // If it fired between createMarket and the last seed deposit, that market exists on-chain but
+      // was never mirrored, so it stays off the board and can be neither bet on nor parlayed.
+      console.error(`curator: create/seed failed for ${c.slotKey}:`, err)
       results.push({ slot: c.slotKey, outcome: 'tx-failed' })
       break
     }
   }
 
-  // Seed every created market on all outcomes so no pool is empty — the parlay multiplier
-  // then reflects real odds and grows with legs instead of maxing at 50x on empty pools.
-  const seeds = seedTargets.flatMap((t) =>
-    Array.from({ length: t.outcomeCount }, (_, o) => ({ id: t.id, outcome: o })),
-  )
-  if (seeds.length > 0) {
-    const seedTotal = SEED_PER_OUTCOME * BigInt(seeds.length)
-    let seeded = 0
-    try {
-      const approveHash = await walletClient.writeContract({
-        address: USDC, abi: erc20Abi, functionName: 'approve', args: [PREDICT_MARKET_CONTRACT, seedTotal],
-      })
-      await publicClient.waitForTransactionReceipt({ hash: approveHash })
-      for (const s of seeds) {
-        try {
-          const seedHash = await walletClient.writeContract({
-            address: PREDICT_MARKET_CONTRACT, abi: predictMarketAbi, functionName: 'deposit', args: [s.id, s.outcome, SEED_PER_OUTCOME],
-          })
-          await publicClient.waitForTransactionReceipt({ hash: seedHash })
-          seeded++
-        } catch (seedErr) {
-          console.error(`curator: seed deposit failed for market ${s.id} outcome ${s.outcome}:`, seedErr)
-        }
-      }
-      // Surface the seed outcome in the cron response, not just the logs.
-      results.push({ slot: 'seed', outcome: `seeded-${seeded}/${seeds.length}` })
-    } catch (approveErr) {
-      console.error('curator: seed approve failed; created markets left unseeded:', approveErr)
-      results.push({ slot: 'seed', outcome: 'approve-failed' })
-    }
+  // Surface an under-filled board in the cron response rather than silently shipping a thin one.
+  // If this keeps firing, either the run is cap-bound (raise the cron frequency, since
+  // MAX_CREATES_PER_RUN is pinned by the 60s function timeout) or creation is failing, in which
+  // case the tx-failed / seed entries above say why.
+  const boardAfter = curated.length + created
+  if (boardAfter < BOARD_MIN) {
+    results.push({ slot: '-', outcome: `below-floor-${boardAfter}/${BOARD_MIN}` })
   }
 
   return { created, results }

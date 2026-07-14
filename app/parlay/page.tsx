@@ -47,7 +47,7 @@ export default function ParlayPage() {
 
   const legIds = Object.keys(slip)
   const legs = legIds.map((id) => ({ marketId: BigInt(id), outcome: slip[id] }))
-  const { data: quoteData } = useReadContract({
+  const { data: quoteData, isError: quoteFailed } = useReadContract({
     address: PARLAY_CONTRACT,
     abi: parlayAbi,
     functionName: 'quote',
@@ -55,6 +55,11 @@ export default function ParlayPage() {
     query: { enabled: legIds.length >= 2 },
   })
   const multiplier = (quoteData as bigint | undefined) ?? 0n
+  // quote() reverts with MarketNotPriced when a picked market's pool is empty: it has no odds to
+  // fold in. That is deliberate — an empty pool used to be read as "maximum odds" and priced the
+  // leg at the cap, which is how a 3-leg slip once quoted 15x on what was really a coin flip.
+  const unpricedLeg = legIds.length >= 2 && quoteFailed
+  const buyDisabled = busy || legIds.length < 2 || !stake || unpricedLeg
 
   function toggle(id: string, outcome: number) {
     setSlip((s) => {
@@ -170,9 +175,15 @@ export default function ParlayPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
               <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem' }}>Multiplier</span>
               <span style={{ fontWeight: 700, color: 'var(--color-pop-accent)' }}>
-                {legIds.length >= 2 ? `${(Number(multiplier) / 1e6).toFixed(2)}x` : '—'}
+                {legIds.length >= 2 && !unpricedLeg ? `${(Number(multiplier) / 1e6).toFixed(2)}x` : '—'}
               </span>
             </div>
+
+            {unpricedLeg && (
+              <p style={{ color: 'var(--color-pop-danger)', fontSize: '0.82rem', lineHeight: 1.5, margin: '0 0 12px' }}>
+                One of your picks has no money in its pool yet, so it has no odds to price. Remove it to build the slip.
+              </p>
+            )}
 
             {!isConnected ? (
               <ConnectButton />
@@ -196,8 +207,8 @@ export default function ParlayPage() {
                 {error && <p style={{ color: 'var(--color-pop-danger)', fontSize: '0.82rem', margin: '0 0 10px' }}>{error}</p>}
                 <button
                   onClick={handleBuy}
-                  disabled={busy || legIds.length < 2 || !stake}
-                  style={{ ...ctaStyle, opacity: busy || legIds.length < 2 || !stake ? 0.5 : 1, cursor: busy || legIds.length < 2 || !stake ? 'not-allowed' : 'pointer' }}
+                  disabled={buyDisabled}
+                  style={{ ...ctaStyle, opacity: buyDisabled ? 0.5 : 1, cursor: buyDisabled ? 'not-allowed' : 'pointer' }}
                 >
                   {busy ? 'Buying…' : 'Approve & buy ticket'}
                 </button>

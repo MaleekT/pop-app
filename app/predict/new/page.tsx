@@ -103,7 +103,11 @@ export default function NewMarketPage() {
           on_chain_id: marketId,
           category: categoryFor(key),
           template_key: key,
-          params: fullParams,
+          // Tag the market as owner-made. The curator dedupes against it (so it never lists the
+          // same fixture twice) but does NOT count it toward its board target, so a market you
+          // create by hand adds to the board instead of displacing a curated one. Params are
+          // jsonb and marketDefinition ignores unknown keys, so this cannot move definitionHash.
+          params: { ...fullParams, src: 'owner' },
           outcomes,
           definition_text: definitionText,
           definition_hash: definitionHash,

@@ -152,10 +152,24 @@ contract ParlayTest is Test {
         assertEq(parlay.owner(), owner);
         assertEq(parlay.ODDS_SCALE(), 1e6);
         assertEq(parlay.MAX_MULTIPLIER(), 15e6);
+        assertEq(parlay.MAX_LEG_ODDS(), 2_500_000);
         assertEq(parlay.MIN_LEGS(), 2);
         assertEq(parlay.MAX_LEGS(), 5);
         assertEq(parlay.HOUSE_MARGIN_NUM(), 90);
         assertEq(parlay.HOUSE_MARGIN_DEN(), 100);
+        assertEq(parlay.CAP_2_LEGS(), 4e6);
+        assertEq(parlay.CAP_3_LEGS(), 7e6);
+        assertEq(parlay.CAP_4_LEGS(), 11e6);
+    }
+
+    // ── leg-count cap ladder ─────────────────────────────────────────────────
+    function test_capForLegs_ladder() public view {
+        assertEq(parlay.capForLegs(2), 4e6);
+        assertEq(parlay.capForLegs(3), 7e6);
+        assertEq(parlay.capForLegs(4), 11e6);
+        assertEq(parlay.capForLegs(5), 15e6);
+        // The headline multiplier IS the five-leg cap, and therefore the absolute ceiling.
+        assertEq(parlay.capForLegs(5), parlay.MAX_MULTIPLIER());
     }
 
     function test_constructor_revertZeroUsdc() public {
@@ -197,15 +211,44 @@ contract ParlayTest is Test {
         // 2x * 2x = 4x fair, then the 90% house margin -> 3.6x
         assertEq(parlay.quote(_legs(a, 0, b, 0)), 3_600_000);
     }
-    function test_quote_emptyPoolLeg() public {
+    // An unseeded market has NO odds. This is the bug that let a real 3-leg slip quote 15x on the
+    // live board: a curated Bitcoin market was created but its seed deposits never landed, so its
+    // pool was 0/0 and the old code read `sidePool == 0` as "maximum odds" and priced the leg at
+    // the cap. Refusing to quote it is the fix.
+    function test_quote_revertUnpricedLeg_emptySide() public {
         uint256 a = _market();
         _seed(a, 25e6, 25e6);
         uint256 b = _market();
         vm.prank(bob);
-        pm.deposit(b, 0, 25e6); // only outcome 0 seeded; outcome 1 of b stays empty
-        // leg b-1 has sidePool 0 -> MAX_MULTIPLIER; combined with a-0 (2x) and capped at MAX.
-        Parlay.Leg[] memory legs = _legs(a, 0, b, 1);
-        assertEq(parlay.quote(legs), parlay.MAX_MULTIPLIER());
+        pm.deposit(b, 0, 25e6); // only outcome 0 funded; outcome 1 of b stays empty
+        vm.expectRevert(Parlay.MarketNotPriced.selector);
+        parlay.quote(_legs(a, 0, b, 1));
+    }
+    function test_quote_revertUnpricedLeg_whollyUnseeded() public {
+        uint256 a = _market();
+        _seed(a, 25e6, 25e6);
+        uint256 b = _market(); // never seeded: pool 0/0, poolSum 0 — exactly the live Bitcoin market
+        vm.expectRevert(Parlay.MarketNotPriced.selector);
+        parlay.quote(_legs(a, 0, b, 0));
+    }
+    // The real PredictMarket can never report a funded side inside an empty pool sum, but the
+    // `pools == 0` half of the guard must still hold if it ever did.
+    function test_quote_revertUnpricedLeg_zeroPoolSum() public {
+        MockMarket mock = new MockMarket();
+        mock.set(5, 0);
+        Parlay mockParlay = new Parlay(address(usdc), address(mock), owner);
+        Parlay.Leg[] memory legs = new Parlay.Leg[](1);
+        legs[0] = Parlay.Leg({ marketId: 1, outcome: 0 });
+        vm.expectRevert(Parlay.MarketNotPriced.selector);
+        mockParlay.quote(legs);
+    }
+    function test_buyTicket_revertUnpricedLeg() public {
+        uint256 a = _market();
+        _seed(a, 25e6, 25e6);
+        uint256 b = _market(); // unseeded
+        vm.prank(alice);
+        vm.expectRevert(Parlay.MarketNotPriced.selector);
+        parlay.buyTicket(_legs(a, 0, b, 0), 10e6);
     }
     function test_quote_floorsLegOddsAtOneX() public {
         MockMarket mock = new MockMarket();
@@ -215,14 +258,14 @@ contract ParlayTest is Test {
         legs[0] = Parlay.Leg({ marketId: 1, outcome: 0 });
         assertEq(mockParlay.quote(legs), 1e6);
     }
-    function test_quote_capsLegOddsAtMax() public {
+    function test_quote_clampsLegOddsAtMaxLegOdds() public {
         MockMarket mock = new MockMarket();
-        mock.set(1, 1000); // tiny side vs pot -> raw legOdds 1e9 -> capped to MAX per leg
+        mock.set(1, 1000); // tiny side vs pot -> raw legOdds 1000x -> clamped to MAX_LEG_ODDS (2.5x)
         Parlay mockParlay = new Parlay(address(usdc), address(mock), owner);
         Parlay.Leg[] memory legs = new Parlay.Leg[](1);
         legs[0] = Parlay.Leg({ marketId: 1, outcome: 0 });
-        // The leg is capped at MAX (15x), then the 90% house margin takes it to 13.5x.
-        assertEq(mockParlay.quote(legs), 13_500_000);
+        // 2.5x clamped, then the 90% house margin -> 2.25x. No single leg can ever be worth more.
+        assertEq(mockParlay.quote(legs), 2_250_000);
     }
 
     // ── buyTicket ────────────────────────────────────────────────────────────
@@ -524,5 +567,58 @@ contract ParlayTest is Test {
         vm.prank(alice);
         vm.expectRevert(Parlay.BadLegCount.selector);
         parlay.buyTicket(legs, 1e6);
+    }
+
+    // ── thin-pool protection ─────────────────────────────────────────────────
+    // Every leg maximally lopsided, so each one clamps to MAX_LEG_ODDS (2.5x).
+    function _nSkewedLegs(uint256 n) internal returns (Parlay.Leg[] memory legs) {
+        legs = new Parlay.Leg[](n);
+        for (uint256 i; i < n; ++i) {
+            uint256 id = _market();
+            _seed(id, 100e6, 1e6);   // outcome 1 reads as a 101x shot on a 1 USDC pool
+            legs[i] = Parlay.Leg({ marketId: id, outcome: 1 });
+        }
+    }
+
+    // The exact absurdity reported from the live board, reproduced.
+    // France 6 USDC vs Spain 1 USDC makes Spain read as a 7.00x leg off a 1 USDC pool, and an even
+    // Lakers/Clippers pool makes Clippers 2.00x. The old contract quoted 7.00 * 2.00 * 0.9 = 12.6x
+    // on TWO legs — not because the maths was wrong, but because a 5 USDC bet is enough to make a
+    // thin pool lie about the odds. The leg clamp plus the two-leg cap bring it back to 4.00x.
+    function test_quote_thinPoolCannotMintAMonsterTwoLegParlay() public {
+        uint256 spainMarket = _market();
+        _seed(spainMarket, 6e6, 1e6);   // outcome 1 (Spain) looks like 7.00x
+        uint256 nbaMarket = _market();
+        _seed(nbaMarket, 1e6, 1e6);     // even pool -> 2.00x either side
+
+        // 7.00x is clamped to 2.5x, so 2.5 * 2.0 = 5.0, margin -> 4.5x, two-leg cap -> 4.00x.
+        assertEq(parlay.quote(_legs(spainMarket, 1, nbaMarket, 1)), parlay.CAP_2_LEGS());
+    }
+
+    // The headline multiplier must be unreachable below five legs, no matter how extreme the pools.
+    // This is the property the user actually asked for: 15x is something you earn across five
+    // games, not something a thin pool hands you across two.
+    function test_quote_headlineMultiplierNeedsAllFiveLegs() public {
+        // Raw products of clamped 2.5x legs, after the 90% margin:
+        //   2 legs -> 5.62x, capped to 4x     3 legs -> 14.06x, capped to 7x
+        //   4 legs -> 35.15x, capped to 11x   5 legs -> 87.89x, capped to 15x
+        assertEq(parlay.quote(_nSkewedLegs(2)), parlay.CAP_2_LEGS());
+        assertEq(parlay.quote(_nSkewedLegs(3)), parlay.CAP_3_LEGS());
+        assertEq(parlay.quote(_nSkewedLegs(4)), parlay.CAP_4_LEGS());
+        assertEq(parlay.quote(_nSkewedLegs(5)), parlay.MAX_MULTIPLIER());
+    }
+
+    // Judgment still has to count: backing five heavy favourites pays close to nothing, because the
+    // clamp is a ceiling, not a floor. Without this, capping by leg count alone would let someone
+    // pick five near-certainties and collect the headline number.
+    function test_quote_favouritesStillPayLittle() public {
+        Parlay.Leg[] memory legs = new Parlay.Leg[](5);
+        for (uint256 i; i < 5; ++i) {
+            uint256 id = _market();
+            _seed(id, 100e6, 1e6);   // outcome 0 is the heavy favourite: 101/100 = 1.01x
+            legs[i] = Parlay.Leg({ marketId: id, outcome: 0 });
+        }
+        // 1.01^5 = 1.051x fair, and the margin takes it BELOW 1x, so the floor holds it at 1.00x.
+        assertEq(parlay.quote(legs), parlay.ODDS_SCALE());
     }
 }

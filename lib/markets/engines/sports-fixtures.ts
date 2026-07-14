@@ -9,6 +9,26 @@ const TSDB_BASE = 'https://www.thesportsdb.com/api/v1/json/3'
 // TheSportsDB tags World Cup finals matches with a league name containing "World Cup".
 const WORLD_CUP = /world cup/i
 
+// Real competitions, matched EXACTLY. Everything else is preseason and ranks below them:
+// "Club Friendlies", "NBA Summer League", "English Premier League Summer Series".
+// The exactness is the whole point. A substring match on "NBA" or "Premier League" would promote
+// the two summer competitions, which are precisely what this is meant to rank down.
+const COMPETITIVE_LEAGUES = new Set([
+  'English Premier League',
+  'Spanish La Liga',
+  'German Bundesliga',
+  'French Ligue 1',
+  'Italian Serie A',
+  'UEFA Champions League',
+  'UEFA Europa League',
+  'NBA',
+])
+
+export function isCompetitive(league: string): boolean {
+  const name = league.trim()
+  return WORLD_CUP.test(name) || COMPETITIVE_LEAGUES.has(name)
+}
+
 export type Sport = 'football' | 'basketball'
 
 export interface FollowedTeam {
@@ -24,6 +44,8 @@ export interface UpcomingFixture {
   awayTeam: string
   date: string // ISO, UTC
   sport: Sport
+  league: string       // raw strLeague, e.g. "FIFA World Cup" or "Club Friendlies"
+  competitive: boolean // a real competition rather than preseason/summer filler
 }
 
 interface TsdbNextEvent {
@@ -45,7 +67,7 @@ async function fetchTeamFixtures(team: FollowedTeam, perTeam: number, maxFootbal
     const data = (await res.json()) as { events: TsdbNextEvent[] | null }
     const now = Date.now()
 
-    return (data.events ?? [])
+    const mapped = (data.events ?? [])
       .flatMap((e): UpcomingFixture[] => {
         if (!e?.idEvent || !e.strHomeTeam || !e.strAwayTeam || !e.dateEvent) return []
         const time = e.strTime ?? '00:00:00'
@@ -58,10 +80,23 @@ async function fetchTeamFixtures(team: FollowedTeam, perTeam: number, maxFootbal
         if (team.sport === 'football' && ts > now + maxFootballMs) return []
         // National teams list World Cup matches only (drop friendlies, qualifiers, Nations League).
         if (team.sport === 'football' && team.kind === 'national' && !WORLD_CUP.test(e.strLeague ?? '')) return []
-        return [{ id: `tsdb:${e.idEvent}`, homeTeam: e.strHomeTeam, awayTeam: e.strAwayTeam, date: iso, sport: team.sport }]
+        const league = e.strLeague ?? ''
+        return [{
+          id: `tsdb:${e.idEvent}`,
+          homeTeam: e.strHomeTeam,
+          awayTeam: e.strAwayTeam,
+          date: iso,
+          sport: team.sport,
+          league,
+          competitive: isCompetitive(league),
+        }]
       })
-      .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
-      .slice(0, perTeam)
+
+    // Rank WITHIN the team before truncating, not just globally. Slicing to perTeam by date alone
+    // would keep two sooner friendlies and drop a real league fixture behind them, and the global
+    // rank would then never get to see it. Harmless today (the free feed returns one fixture per
+    // team) but it bites the moment the season starts and a club has both queued.
+    return rankFixtures(mapped).slice(0, perTeam)
   } catch {
     return []
   }
@@ -80,6 +115,15 @@ export async function fetchUpcomingFixtures(followed: FollowedTeam[], perTeam: n
       out.push(f)
     }
   }
-  // Soonest first, so the most imminent (and most viral) fixtures are created before later ones.
-  return out.sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
+  return rankFixtures(out)
+}
+
+// Real competitions outrank preseason; within a tier, the soonest kick-off comes first. So a World
+// Cup tie or a league match always claims a board slot ahead of a July friendly, and friendlies only
+// fill what is left over. Pure and copy-on-write, so it is unit testable and never mutates its input.
+export function rankFixtures(fixtures: UpcomingFixture[]): UpcomingFixture[] {
+  return [...fixtures].sort((a, b) => {
+    if (a.competitive !== b.competitive) return a.competitive ? -1 : 1
+    return Date.parse(a.date) - Date.parse(b.date)
+  })
 }

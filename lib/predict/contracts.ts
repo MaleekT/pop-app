@@ -952,6 +952,45 @@ export const parlayAbi = [
   },
   {
     "type": "function",
+    "name": "CAP_2_LEGS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "CAP_3_LEGS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "CAP_4_LEGS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "HOUSE_MARGIN_DEN",
     "inputs": [],
     "outputs": [
@@ -979,6 +1018,19 @@ export const parlayAbi = [
   {
     "type": "function",
     "name": "MAX_LEGS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_LEG_ODDS",
     "inputs": [],
     "outputs": [
       {
@@ -1076,6 +1128,25 @@ export const parlayAbi = [
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "capForLegs",
+    "inputs": [
+      {
+        "name": "legs",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -1386,6 +1457,11 @@ export const parlayAbi = [
   {
     "type": "error",
     "name": "MarketNotOpen",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MarketNotPriced",
     "inputs": []
   },
   {

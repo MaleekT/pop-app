@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { keccak256, toHex } from 'viem'
 import { cryptoSlotKey, generateCryptoCandidates, generateSportsCandidates } from './curator'
+import { BOARD_TARGET, TARGET_OPEN_PER_COIN } from './curator-config'
 
 // Fixed clock so resolveAt strings are deterministic.
 const NOW = Date.UTC(2026, 6, 10, 12, 0, 0) // 2026-07-10T12:00:00Z
@@ -29,7 +30,9 @@ describe('generateCryptoCandidates', () => {
     expect(new Set(candidates.map((c) => c.templateKey)).size).toBeGreaterThan(1)
   })
 
-  it('respects the per-coin target (2 per coin) across a large limit', () => {
+  // Read the cap from config rather than hardcoding it: crypto is the board's guaranteed filler,
+  // so this number gets retuned whenever the board target moves, and the test should follow it.
+  it('respects the per-coin cap across a large limit', () => {
     const candidates = generateCryptoCandidates({
       prices: ALL_PRICES,
       existingSlotKeys: new Set(),
@@ -38,23 +41,36 @@ describe('generateCryptoCandidates', () => {
       limit: 99,
     })
 
-    expect(candidates).toHaveLength(6) // 3 coins × 2
+    expect(candidates).toHaveLength(3 * TARGET_OPEN_PER_COIN)
     for (const coin of ['bitcoin', 'ethereum', 'solana']) {
-      expect(candidates.filter((c) => c.params.coin === coin)).toHaveLength(2)
+      expect(candidates.filter((c) => c.params.coin === coin)).toHaveLength(TARGET_OPEN_PER_COIN)
     }
   })
 
-  it('creates nothing for a coin already at its per-coin target', () => {
+  it('creates nothing for a coin already at its per-coin cap', () => {
     const candidates = generateCryptoCandidates({
       prices: ALL_PRICES,
       existingSlotKeys: new Set(),
-      openCountByCoin: { bitcoin: 2 },
+      openCountByCoin: { bitcoin: TARGET_OPEN_PER_COIN },
       now: NOW,
       limit: 99,
     })
 
     expect(candidates.some((c) => c.params.coin === 'bitcoin')).toBe(false)
-    expect(candidates).toHaveLength(4) // ethereum 2 + solana 2
+    expect(candidates).toHaveLength(2 * TARGET_OPEN_PER_COIN) // ethereum + solana only
+  })
+
+  // The per-coin cap must be able to carry the whole board on its own, or a fixture drought
+  // drops the board under BOARD_MIN and the 12-market floor the user asked for is a lie.
+  it('can fill the entire board target from crypto alone', () => {
+    const candidates = generateCryptoCandidates({
+      prices: ALL_PRICES,
+      existingSlotKeys: new Set(),
+      openCountByCoin: {},
+      now: NOW,
+      limit: BOARD_TARGET,
+    })
+    expect(candidates).toHaveLength(BOARD_TARGET)
   })
 
   it('computes the ABOVE target, outcomes, resolveAt, and a matching hash', () => {
@@ -132,6 +148,10 @@ describe('generateSportsCandidates', () => {
     awayTeam: away,
     sport,
     date: new Date(NOW + hoursOut * 3_600_000).toISOString(),
+    // Ranking (competitive before preseason) happens upstream in rankFixtures; this generator
+    // just preserves the order it is handed. See sports-fixtures.test.ts for that.
+    league: 'Club Friendlies',
+    competitive: false,
   })
 
   it('builds a 3-way sports_winner market resolving 3h after kick-off', () => {

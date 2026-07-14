@@ -18,10 +18,27 @@ contract Parlay is ReentrancyGuard {
     PredictMarket public immutable market;
     address       public immutable owner;
 
-    uint256 public constant ODDS_SCALE = 1e6;                  // 1.000000x
-    uint256 public constant MAX_MULTIPLIER = 15 * ODDS_SCALE;  // payout cap
+    uint256 public constant ODDS_SCALE = 1e6;   // 1.000000x
+
+    // No single leg may be worth more than this, however lopsided its pool looks.
+    // A curated market is seeded with only 1 USDC a side, so one modest bet can swing a pool ratio
+    // to 7x or beyond. At that size the ratio is noise, not a probability. Worse, it is cheap to
+    // move on purpose: a parlay pays from the HOUSE, while the manipulator's own market stake comes
+    // back to them out of the pot. Clamping the leg is what stops a thin pool minting a monster
+    // multiplier. Raise it only once pools are deep enough for their ratios to mean something.
+    uint256 public constant MAX_LEG_ODDS = 2_500_000; // 2.5x
+
     uint256 public constant MIN_LEGS = 2;
     uint256 public constant MAX_LEGS = 5;
+
+    // The payout cap RISES WITH THE LEG COUNT, so the headline multiplier is only reachable across a
+    // full five-leg ticket. A big number on two legs means a pool was thin, not that the bet was
+    // genuinely long; a big number on five means five separate calls all came in.
+    // MAX_MULTIPLIER is the five-leg cap, and therefore the absolute ceiling.
+    uint256 public constant MAX_MULTIPLIER = 15 * ODDS_SCALE;
+    uint256 public constant CAP_2_LEGS = 4 * ODDS_SCALE;
+    uint256 public constant CAP_3_LEGS = 7 * ODDS_SCALE;
+    uint256 public constant CAP_4_LEGS = 11 * ODDS_SCALE;
 
     // The house pays 90% of the mathematically fair product, keeping a 10% edge so a modest house
     // pool stays solvent while a parlay is still worth playing.
@@ -61,6 +78,7 @@ contract Parlay is ReentrancyGuard {
     error InsufficientHouse();
     error WrongStatus();
     error LegNotTerminal();
+    error MarketNotPriced();
 
     constructor(address _usdc, address _market, address _owner) {
         require(_usdc != address(0) && _market != address(0) && _owner != address(0), "zero addr");
@@ -81,11 +99,17 @@ contract Parlay is ReentrancyGuard {
         return houseBalance - totalReserved;
     }
 
-    // Folds each leg's live parimutuel odds into a combined multiplier. Each leg is
-    // defensively clamped to [1x, MAX_MULTIPLIER]: the floor guarantees a leg can never
-    // reduce the payout (a local invariant, not one we borrow from the market's pool
-    // accounting), and the cap also stops the fold overflowing on a near-empty pool. The
-    // fair product is then cut by the house margin, floored at 1x, and capped.
+    // The multiplier ceiling for a ticket of `legs` legs. buyTicket bounds the input to
+    // [MIN_LEGS, MAX_LEGS], so the final branch is the five-leg case.
+    function capForLegs(uint256 legs) public pure returns (uint256) {
+        if (legs <= 2) return CAP_2_LEGS;
+        if (legs == 3) return CAP_3_LEGS;
+        if (legs == 4) return CAP_4_LEGS;
+        return MAX_MULTIPLIER;
+    }
+
+    // Folds each leg's live parimutuel odds into a combined multiplier, cuts the house margin off
+    // the fair product, then applies the leg-count cap.
     function quote(Leg[] calldata picks) public view returns (uint256 multiplier) {
         uint256 acc = ODDS_SCALE;
         for (uint256 i; i < picks.length; ++i) {
@@ -93,17 +117,30 @@ contract Parlay is ReentrancyGuard {
             // sponsorship on a market never inflates a parlay leg, which the house (not the
             // market pot) would have to cover.
             (uint256 sidePool, uint256 pools) = market.poolInfo(picks[i].marketId, picks[i].outcome);
-            uint256 legOdds = sidePool == 0 ? MAX_MULTIPLIER : (pools * ODDS_SCALE) / sidePool;
+
+            // An empty pool has no odds to quote. The old code read `sidePool == 0` as "maximum
+            // odds", so an UNSEEDED market priced its leg at the cap: a real ticket was offered at
+            // 15x on what was actually a coin flip, payable by the house. Refuse to price it.
+            if (sidePool == 0 || pools == 0) revert MarketNotPriced();
+
+            uint256 legOdds = (pools * ODDS_SCALE) / sidePool;
+            // Floor: a leg can never REDUCE the payout. sidePool <= pools always, so this is
+            // defensive rather than load-bearing.
             if (legOdds < ODDS_SCALE) legOdds = ODDS_SCALE;
-            if (legOdds > MAX_MULTIPLIER) legOdds = MAX_MULTIPLIER;
+            // Ceiling: see MAX_LEG_ODDS. This is the change that actually stops a thin or
+            // manipulated pool from minting a monster multiplier.
+            if (legOdds > MAX_LEG_ODDS) legOdds = MAX_LEG_ODDS;
             acc = (acc * legOdds) / ODDS_SCALE;
         }
+
         acc = (acc * HOUSE_MARGIN_NUM) / HOUSE_MARGIN_DEN;
         // The 1x floor is REQUIRED, not cosmetic: buyTicket and settle both compute
         // `reserve = payout - stake` and rely on multiplier >= 1x. Without it the margin could push
         // a low-odds parlay below 1x and that subtraction would underflow.
         if (acc < ODDS_SCALE) acc = ODDS_SCALE;
-        if (acc > MAX_MULTIPLIER) acc = MAX_MULTIPLIER;
+
+        uint256 cap = capForLegs(picks.length);
+        if (acc > cap) acc = cap;
         return acc;
     }
 
