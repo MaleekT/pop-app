@@ -96,9 +96,11 @@ export default function PredictPage() {
 
   const filtered = markets
     .filter((m) => {
+      // Voided/cancelled markets are removed from the board entirely.
+      if (m.status === 'Voided') return false
       const statusOk =
         filter === 'open' ? m.status === 'Pending'
-        : filter === 'resolved' ? m.status === 'Resolved' || m.status === 'Voided'
+        : filter === 'resolved' ? m.status === 'Resolved'
         : true
       return statusOk && (category === 'all' || m.category === category)
     })
