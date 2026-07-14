@@ -151,9 +151,11 @@ contract ParlayTest is Test {
         assertEq(address(parlay.market()), address(pm));
         assertEq(parlay.owner(), owner);
         assertEq(parlay.ODDS_SCALE(), 1e6);
-        assertEq(parlay.MAX_MULTIPLIER(), 50e6);
+        assertEq(parlay.MAX_MULTIPLIER(), 15e6);
         assertEq(parlay.MIN_LEGS(), 2);
-        assertEq(parlay.MAX_LEGS(), 10);
+        assertEq(parlay.MAX_LEGS(), 5);
+        assertEq(parlay.HOUSE_MARGIN_NUM(), 90);
+        assertEq(parlay.HOUSE_MARGIN_DEN(), 100);
     }
 
     function test_constructor_revertZeroUsdc() public {
@@ -192,7 +194,8 @@ contract ParlayTest is Test {
     // ── quote ────────────────────────────────────────────────────────────────
     function test_quote_twoLegsCleanOdds() public {
         (uint256 a, uint256 b) = _twoEqualMarkets();
-        assertEq(parlay.quote(_legs(a, 0, b, 0)), 4e6); // 2x * 2x
+        // 2x * 2x = 4x fair, then the 90% house margin -> 3.6x
+        assertEq(parlay.quote(_legs(a, 0, b, 0)), 3_600_000);
     }
     function test_quote_emptyPoolLeg() public {
         uint256 a = _market();
@@ -218,7 +221,8 @@ contract ParlayTest is Test {
         Parlay mockParlay = new Parlay(address(usdc), address(mock), owner);
         Parlay.Leg[] memory legs = new Parlay.Leg[](1);
         legs[0] = Parlay.Leg({ marketId: 1, outcome: 0 });
-        assertEq(mockParlay.quote(legs), mockParlay.MAX_MULTIPLIER());
+        // The leg is capped at MAX (15x), then the 90% house margin takes it to 13.5x.
+        assertEq(mockParlay.quote(legs), 13_500_000);
     }
 
     // ── buyTicket ────────────────────────────────────────────────────────────
@@ -232,12 +236,12 @@ contract ParlayTest is Test {
         (address bettor, uint128 stake, uint256 mult, Parlay.Status status) = parlay.tickets(id);
         assertEq(bettor, alice);
         assertEq(stake, 10e6);
-        assertEq(mult, 4e6);
+        assertEq(mult, 3_600_000);   // 4x fair, 90% house margin
         assertEq(uint8(status), uint8(Parlay.Status.Open));
 
-        // reserve = payout - stake = 40 - 10 = 30
-        assertEq(parlay.totalReserved(), 30e6);
-        assertEq(parlay.houseAvailable(), HOUSE - 30e6);
+        // reserve = payout - stake = 36 - 10 = 26
+        assertEq(parlay.totalReserved(), 26e6);
+        assertEq(parlay.houseAvailable(), HOUSE - 26e6);
         assertEq(usdc.balanceOf(alice), aliceBefore - 10e6);
         assertEq(parlay.getLegs(id).length, 2);
     }
@@ -271,6 +275,19 @@ contract ParlayTest is Test {
     function test_buyTicket_revertMarketNotOpen() public {
         (uint256 a, uint256 b) = _twoEqualMarkets();
         _resolve(a, 0); // a is now Resolved, no longer open
+        vm.prank(alice);
+        vm.expectRevert(Parlay.MarketNotOpen.selector);
+        parlay.buyTicket(_legs(a, 0, b, 0), 10e6);
+    }
+    // Pending is not the same as open. After resolveAt a market stays Pending until the resolver
+    // proposes, and buying a leg in that window is betting on a match whose result is already known.
+    function test_buyTicket_revertLegBettingClosed() public {
+        (uint256 a, uint256 b) = _twoEqualMarkets();
+        vm.warp(RESOLVE_AT); // betting closed on both; the resolver has not proposed yet
+
+        (PredictMarket.Status s,) = pm.resultOf(a);
+        assertEq(uint8(s), uint8(PredictMarket.Status.Pending), "market is still Pending, just closed");
+
         vm.prank(alice);
         vm.expectRevert(Parlay.MarketNotOpen.selector);
         parlay.buyTicket(_legs(a, 0, b, 0), 10e6);
@@ -310,8 +327,8 @@ contract ParlayTest is Test {
 
         (, , , Parlay.Status status) = parlay.tickets(id);
         assertEq(uint8(status), uint8(Parlay.Status.Won));
-        assertEq(usdc.balanceOf(alice), aliceBefore + 40e6); // payout
-        assertEq(parlay.houseBalance(), HOUSE - 30e6);        // house paid its 30 liability
+        assertEq(usdc.balanceOf(alice), aliceBefore + 36e6); // payout = 10 * 3.6x
+        assertEq(parlay.houseBalance(), HOUSE - 26e6);        // house paid its 26 liability
         assertEq(parlay.totalReserved(), 0);
     }
     function test_settle_oneLegLost() public {
@@ -454,8 +471,8 @@ contract ParlayTest is Test {
         attacker.doSettle(id);
 
         assertTrue(attacker.reentrancyBlocked());
-        // paid exactly once: 100 - 10 stake + 40 payout = 130
-        assertEq(hook.balanceOf(address(attacker)), 130e6);
+        // paid exactly once: 100 - 10 stake + 36 payout (10 * 3.6x) = 126
+        assertEq(hook.balanceOf(address(attacker)), 126e6);
         (, , , Parlay.Status status) = hparlay.tickets(id);
         assertEq(uint8(status), uint8(Parlay.Status.Won));
     }
@@ -467,17 +484,45 @@ contract ParlayTest is Test {
         vm.prank(alice);
         uint256 id = parlay.buyTicket(_legs(a, 0, b, 0), 20e6);
         (, , uint256 mult, ) = parlay.tickets(id);
-        assertEq(mult, 4e6);
-        // reserve = 80 - 20 = 60
-        assertEq(parlay.totalReserved(), 60e6);
+        assertEq(mult, 3_600_000);   // 4x fair, 90% house margin
+        // reserve = payout - stake = 72 - 20 = 52
+        assertEq(parlay.totalReserved(), 52e6);
 
         uint256 aliceBefore = usdc.balanceOf(alice);
         _resolve(a, 0);
         _resolve(b, 0);
         parlay.settle(id);
 
-        assertEq(usdc.balanceOf(alice), aliceBefore + 80e6);
+        assertEq(usdc.balanceOf(alice), aliceBefore + 72e6);
         assertEq(parlay.totalReserved(), 0);
         assertGe(parlay.houseBalance(), 0);
+    }
+
+    // ── leg cap (MAX_LEGS = 5) ───────────────────────────────────────────────
+    function _nLegs(uint256 n) internal returns (Parlay.Leg[] memory legs) {
+        legs = new Parlay.Leg[](n);
+        for (uint256 i; i < n; ++i) {
+            uint256 id = _market();
+            _seed(id, 25e6, 25e6);   // equal pools, so each side is 2x
+            legs[i] = Parlay.Leg({ marketId: id, outcome: 0 });
+        }
+    }
+
+    function test_buyTicket_acceptsMaxLegs() public {
+        Parlay.Leg[] memory legs = _nLegs(5);   // exactly MAX_LEGS
+        vm.prank(alice);
+        uint256 id = parlay.buyTicket(legs, 1e6);
+
+        (, , uint256 mult, ) = parlay.tickets(id);
+        // 2x^5 = 32x fair -> 90% margin = 28.8x -> capped at MAX_MULTIPLIER (15x)
+        assertEq(mult, parlay.MAX_MULTIPLIER());
+        assertEq(parlay.getLegs(id).length, 5);
+    }
+
+    function test_buyTicket_revertSixLegs() public {
+        Parlay.Leg[] memory legs = _nLegs(6);   // one over MAX_LEGS
+        vm.prank(alice);
+        vm.expectRevert(Parlay.BadLegCount.selector);
+        parlay.buyTicket(legs, 1e6);
     }
 }

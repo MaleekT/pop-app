@@ -278,6 +278,112 @@ contract PredictMarketTest is Test {
         pm.deposit(id, YES, 0);
     }
 
+    // ── sponsor (prize-pot subsidy) ──────────────────────────────────────────
+    // A sponsor adds prize money to the pot without joining any pool, so the odds cannot move
+    // while every winner's payout multiplier (totalPot / winningPool) rises.
+    function test_sponsor_raisesPotButNotThePools() public {
+        uint256 id = _market(2);
+        _bet(id, YES, alice, 10e6);
+        _bet(id, NO, bob, 5e6);
+        assertEq(pm.poolSum(id), 15e6);
+        assertEq(pm.totalPot(id), 15e6);
+
+        vm.prank(carol);
+        pm.sponsor(id, 30e6);
+
+        // Pools (and therefore the odds) are untouched; only the payout pot grows.
+        assertEq(pm.pool(id, YES), 10e6);
+        assertEq(pm.pool(id, NO), 5e6);
+        assertEq(pm.poolSum(id), 15e6);
+        assertEq(pm.totalPot(id), 45e6);
+        assertEq(pm.sponsored(id, carol), 30e6);
+    }
+
+    function test_sponsor_boostsWinnerPayout() public {
+        uint256 id = _market(2);
+        _bet(id, YES, alice, 10e6);
+        _bet(id, NO, bob, 5e6);
+        vm.prank(carol);
+        pm.sponsor(id, 30e6);          // pot 15 -> 45
+        _propose(id, YES);
+        _finalize(id);
+
+        uint256 before = usdc.balanceOf(alice);
+        vm.prank(alice);
+        pm.claim(id);
+        // Alice owns the whole YES pool, so she takes the whole pot: 45 (it would be 15 unsponsored).
+        assertEq(usdc.balanceOf(alice), before + 45e6);
+    }
+
+    function test_sponsor_noClaimOnResolvedMarket() public {
+        uint256 id = _market(2);
+        _bet(id, YES, alice, 10e6);
+        _bet(id, NO, bob, 5e6);
+        vm.prank(carol);
+        pm.sponsor(id, 30e6);
+        _propose(id, YES);
+        _finalize(id);
+
+        // Carol staked nothing: her sponsorship is a gift to the winners, not a position.
+        vm.prank(carol);
+        vm.expectRevert(PredictMarket.NothingToClaim.selector);
+        pm.claim(id);
+    }
+
+    function test_sponsor_reclaimedOnVoid() public {
+        uint256 id = _market(2);
+        _bet(id, YES, alice, 10e6);
+        vm.prank(carol);
+        pm.sponsor(id, 30e6);
+
+        vm.prank(resolver);
+        pm.voidMarket(id, EV);
+
+        uint256 before = usdc.balanceOf(carol);
+        vm.prank(carol);
+        pm.claimRefund(id);
+        assertEq(usdc.balanceOf(carol), before + 30e6);   // returned, never stranded
+        assertEq(pm.sponsored(id, carol), 0);
+    }
+
+    function test_sponsor_contractSolventAfterResolve() public {
+        uint256 id = _market(2);
+        _bet(id, YES, alice, 10e6);
+        _bet(id, NO, bob, 5e6);
+        vm.prank(carol);
+        pm.sponsor(id, 30e6);
+        _propose(id, YES);
+        _finalize(id);
+
+        vm.prank(alice);
+        pm.claim(id);
+        // Winners split exactly the pot: nothing over-paid, nothing stranded.
+        assertEq(usdc.balanceOf(address(pm)), 0);
+    }
+
+    function test_sponsor_revertZeroAmount() public {
+        uint256 id = _market(2);
+        vm.prank(carol);
+        vm.expectRevert(PredictMarket.ZeroAmount.selector);
+        pm.sponsor(id, 0);
+    }
+
+    function test_sponsor_revertOnceBettingClosed() public {
+        uint256 id = _market(2);
+        vm.warp(resolveAt);
+        vm.prank(carol);
+        vm.expectRevert(PredictMarket.BettingClosed.selector);
+        pm.sponsor(id, 10e6);
+    }
+
+    function test_sponsor_revertNonexistentMarket() public {
+        // A market that was never created reads as a zero-struct (status Pending, resolveAt 0),
+        // so this guard is what stops a sponsor stranding funds in a market that can never settle.
+        vm.prank(carol);
+        vm.expectRevert(PredictMarket.BettingClosed.selector);
+        pm.sponsor(999, 10e6);
+    }
+
     // ── proposeOutcome ───────────────────────────────────────────────────────
     function test_propose_happyPath() public {
         uint256 id = _market(2);
