@@ -52,10 +52,14 @@ export const HORIZONS: Horizon[] = [
 export const BOARD_TARGET = 20
 export const BOARD_MIN = 12
 
-// How many OPEN markets to keep alive PER COIN, so the board stays balanced across coins
-// instead of filling up with one. 3 coins x 7 = 21, which is >= BOARD_TARGET, so crypto alone
-// can still fill the board on a weekend with no fixtures at all.
-export const TARGET_OPEN_PER_COIN = 7
+// How many OPEN markets to keep alive PER COIN. Capped at 2 so no single coin — Bitcoin, in
+// practice — can dominate the board or a parlay slip, and the two are picked from different
+// horizons so their close dates spread out. 3 coins x 2 = 6 crypto, so crypto no longer fills the
+// 12-market floor on its own: the board now leans on sports (clubs are in preseason, plus the World
+// Cup) and may sit below BOARD_MIN in a genuine fixture drought. That trade is deliberate — variety
+// over raw count. To lift crypto variety WITHOUT letting one coin dominate, add ids to CRYPTO_COINS
+// rather than raising this.
+export const TARGET_OPEN_PER_COIN = 2
 
 // Hard per-run creation cap. A bad config or price glitch can never spam more than this in one run.
 // It is ALSO a timeout guard, and that is not theoretical: at 5 it really did blow the budget. Each
