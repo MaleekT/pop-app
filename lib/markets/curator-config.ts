@@ -69,14 +69,13 @@ export const BOARD_MIN = 12
 // raising it is what let Bitcoin take over the board before.
 export const TARGET_OPEN_PER_COIN = 2
 
-// Hard per-run creation cap. A bad config or price glitch can never spam more than this in one run.
-// It is ALSO a timeout guard, and that is not theoretical: at 5 it really did blow the budget. Each
-// market costs 3 sequential txs (createMarket plus one seed deposit per outcome) on top of one
-// approve for the run, so 5 markets was ~16 txs against a maxDuration of 60s. The run ran out of
-// time part-way and left a market created but UNSEEDED, which is what let a parlay leg price at the
-// cap. 4 markets is ~13 txs and leaves real headroom.
-// To fill the board faster, run the cron more often. Do NOT raise this.
-export const MAX_CREATES_PER_RUN = 4
+// Hard per-run creation cap. A bad config or price glitch can never spam more than this in one run,
+// and it bounds the run's time budget: each market is 3 sequential txs (createMarket + one seed
+// deposit per outcome), and each receipt may now RETRY through a flaky-RPC hiccup, so fewer markets
+// per run keeps the whole run comfortably inside the 60s function limit. 2 is the reliable choice;
+// the board still fills within a few 5-minute cron runs. To fill faster, run the cron more often —
+// do NOT raise this.
+export const MAX_CREATES_PER_RUN = 2
 
 // ── Sports ───────────────────────────────────────────────────────────────────
 // Teams to auto-list upcoming matches for. tsdbId is the TheSportsDB team id (same source

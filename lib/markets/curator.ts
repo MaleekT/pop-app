@@ -404,22 +404,68 @@ export async function runCurator(): Promise<CuratorResult> {
     }
   }
 
+  // The Arc testnet RPC frequently errors on the receipt endpoint even when a tx has already mined.
+  // Waiting a single time used to throw and abort the run, ORPHANING the market it had just created
+  // (live on-chain, never seeded or mirrored, invisible on the board). Retry the receipt fetch through
+  // a transient hiccup; the tx is already sent, so this only waits the RPC out.
+  const waitReceipt = async (hash: `0x${string}`) => {
+    let lastErr: unknown
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await publicClient.waitForTransactionReceipt({ hash, timeout: 10_000 })
+      } catch (e) {
+        lastErr = e
+        await new Promise((r) => setTimeout(r, 2_000))
+      }
+    }
+    throw lastErr
+  }
+  const readNextId = () =>
+    publicClient.readContract({ address: PREDICT_MARKET_CONTRACT, abi: predictMarketAbi, functionName: 'nextId' }) as Promise<bigint>
+
   for (const c of candidates) {
     try {
       const resolveAtTs = BigInt(Math.floor(asUTC(c.params.resolveAt).getTime() / 1000))
+      // createMarket runs `id = ++nextId`; it is onlyOwner and runs are serialised, so the new id is
+      // deterministically (nextId before the call) + 1. Capture it up front so the market can be
+      // recovered even when its receipt never arrives, instead of being orphaned.
+      const idBefore = await readNextId()
       const hash = await walletClient.writeContract({
         address: PREDICT_MARKET_CONTRACT,
         abi: predictMarketAbi,
         functionName: 'createMarket',
         args: [c.definitionHash, resolveAtTs, c.outcomes.length],
       })
-      const receipt = await publicClient.waitForTransactionReceipt({ hash })
-      const [log] = parseEventLogs({ abi: predictMarketAbi, eventName: 'MarketCreated', logs: receipt.logs })
-      if (!log) {
-        results.push({ slot: c.slotKey, outcome: 'no-event' })
-        continue
+
+      let marketIdBn: bigint
+      try {
+        const receipt = await waitReceipt(hash)
+        if (receipt.status !== 'success') {
+          results.push({ slot: c.slotKey, outcome: 'create-reverted' })
+          break
+        }
+        const [log] = parseEventLogs({ abi: predictMarketAbi, eventName: 'MarketCreated', logs: receipt.logs })
+        marketIdBn = log ? log.args.id : idBefore + 1n
+      } catch {
+        // No receipt after retries. The tx has very likely mined — confirm nextId advanced AND that
+        // the market at the derived id is actually ours (its definitionHash matches). That second
+        // check makes the id derivation safe even if some other create ever landed concurrently:
+        // a mismatch just skips this market rather than seeding/mirroring the wrong one.
+        const idAfter = await readNextId()
+        if (idAfter <= idBefore) {
+          results.push({ slot: c.slotKey, outcome: 'create-unconfirmed' })
+          break
+        }
+        marketIdBn = idBefore + 1n
+        const m = (await publicClient.readContract({
+          address: PREDICT_MARKET_CONTRACT, abi: predictMarketAbi, functionName: 'getMarket', args: [marketIdBn],
+        })) as { definitionHash?: string }
+        // Any unexpected/empty shape (or a hash that isn't ours) → skip rather than seed the wrong market.
+        if (m?.definitionHash?.toLowerCase() !== c.definitionHash.toLowerCase()) {
+          results.push({ slot: c.slotKey, outcome: 'create-unconfirmed' })
+          break
+        }
       }
-      const marketIdBn = log.args.id          // already a bigint from parseEventLogs
       const marketId = marketIdBn.toString()  // the DB mirrors on_chain_id as text
 
       // Seed EVERY outcome BEFORE mirroring, so a market can never reach the board unseeded.
@@ -435,7 +481,10 @@ export async function runCurator(): Promise<CuratorResult> {
           functionName: 'deposit',
           args: [marketIdBn, o, SEED_PER_OUTCOME],
         })
-        await publicClient.waitForTransactionReceipt({ hash: seedHash })
+        const seedReceipt = await waitReceipt(seedHash)
+        // A reverted seed would leave the pool empty; refuse to mirror it (throws to the outer catch,
+        // which stops the run and leaves this market unmirrored rather than broken-and-visible).
+        if (seedReceipt.status !== 'success') throw new Error(`seed outcome ${o} reverted for market ${marketId}`)
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
