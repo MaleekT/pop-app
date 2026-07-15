@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { keccak256, toHex } from 'viem'
 import { cryptoSlotKey, generateCryptoCandidates, generateSportsCandidates } from './curator'
-import { BOARD_TARGET, TARGET_OPEN_PER_COIN } from './curator-config'
+import { BOARD_MIN, TARGET_OPEN_PER_COIN, CRYPTO_COINS } from './curator-config'
 
 // Fixed clock so resolveAt strings are deterministic.
 const NOW = Date.UTC(2026, 6, 10, 12, 0, 0) // 2026-07-10T12:00:00Z
@@ -60,17 +60,20 @@ describe('generateCryptoCandidates', () => {
     expect(candidates).toHaveLength(2 * TARGET_OPEN_PER_COIN) // ethereum + solana only
   })
 
-  // The per-coin cap must be able to carry the whole board on its own, or a fixture drought
-  // drops the board under BOARD_MIN and the 12-market floor the user asked for is a lie.
-  it('can fill the entire board target from crypto alone', () => {
+  // Crypto's ceiling is coins x per-coin, and that must clear BOARD_MIN or a fixture drought drops
+  // the board under the floor the user asked for. With per-coin capped at 2, this is what the extra
+  // coins buy back: 3 coins would only make 6 (below the 12 floor), so the coin list has to carry it.
+  it('crypto capacity across all coins clears the board floor', () => {
+    const prices = Object.fromEntries(CRYPTO_COINS.map((c) => [c.id, 100]))
     const candidates = generateCryptoCandidates({
-      prices: ALL_PRICES,
+      prices,
       existingSlotKeys: new Set(),
       openCountByCoin: {},
       now: NOW,
-      limit: BOARD_TARGET,
+      limit: 999,
     })
-    expect(candidates).toHaveLength(BOARD_TARGET)
+    expect(candidates).toHaveLength(CRYPTO_COINS.length * TARGET_OPEN_PER_COIN)
+    expect(candidates.length).toBeGreaterThanOrEqual(BOARD_MIN)
   })
 
   it('computes the ABOVE target, outcomes, resolveAt, and a matching hash', () => {
@@ -92,6 +95,26 @@ describe('generateCryptoCandidates', () => {
     expect(c.outcomes).toEqual(['Yes', 'No'])
     expect(c.definitionText).toBe('Will Bitcoin be ABOVE $105000 at 2026-07-11T12:00 UTC? (CoinGecko)')
     expect(c.definitionHash).toBe(keccak256(toHex(c.definitionText)))
+  })
+
+  // Regression: a low-priced coin must keep sub-dollar precision. A flat Math.round() collapsed
+  // SUI's +5% and −5% bands both onto "$1", making "above $1" and "below $1" trivially decided.
+  it('keeps distinct sub-dollar targets for a low-priced coin', () => {
+    const candidates = generateCryptoCandidates({
+      prices: { sui: 0.765 },
+      existingSlotKeys: new Set(),
+      openCountByCoin: {},
+      now: NOW,
+      limit: 99,
+    })
+
+    expect(candidates).toHaveLength(TARGET_OPEN_PER_COIN)
+    const targets = candidates.map((c) => c.params.target)
+    expect(new Set(targets).size).toBe(targets.length) // distinct, not collapsed
+    for (const t of targets) {
+      expect(Number(t)).toBeGreaterThan(0)
+      expect(Number(t)).toBeLessThan(1) // stayed sub-dollar, not rounded up to $1
+    }
   })
 
   it('skips a slot that already exists and moves to the coin’s next one', () => {

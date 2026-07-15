@@ -19,10 +19,19 @@ export interface Horizon {
   hours: number
 }
 
+// `id` MUST be the exact CoinGecko id (the key returned by /simple/price) — the resolver looks the
+// price up by it, so a wrong id makes the market unresolvable. `name` is display only. All ids below
+// verified live against CoinGecko. Low-priced coins (XRP, SUI, NEAR) rely on curator.ts roundTarget
+// keeping sub-dollar precision so their price bands stay distinct.
 export const CRYPTO_COINS: CryptoCoin[] = [
   { id: 'bitcoin', name: 'Bitcoin' },
   { id: 'ethereum', name: 'Ethereum' },
   { id: 'solana', name: 'Solana' },
+  { id: 'binancecoin', name: 'BNB' },
+  { id: 'hyperliquid', name: 'HYPE' },
+  { id: 'ripple', name: 'XRP' },
+  { id: 'sui', name: 'SUI' },
+  { id: 'near', name: 'NEAR' },
 ]
 
 // Ordered so directions alternate — the curator walks this list, so alternating
@@ -45,20 +54,19 @@ export const HORIZONS: Horizon[] = [
 // Only markets the CURATOR made count toward this: markets the owner creates by hand sit on
 // top, so the board can legitimately exceed BOARD_TARGET.
 //
-// Crypto is what actually holds the floor. Sports supply is real-world bound (TheSportsDB
-// returns roughly one upcoming fixture per followed team, and football is capped to
-// FOOTBALL_MAX_DAYS), so it can dry up; crypto has CRYPTO_COINS x PRICE_BANDS x HORIZONS =
-// 3 x 4 x 3 = 36 slots and is always available.
-export const BOARD_TARGET = 20
+// Sized so all 8 coins can hold their 2 markets each (16 crypto) alongside ~8 sports. Crypto is the
+// guaranteed supply and holds the floor; sports is real-world bound (TheSportsDB returns roughly one
+// upcoming fixture per followed team, football capped to FOOTBALL_MAX_DAYS) and can dry up. Crypto
+// has CRYPTO_COINS x PRICE_BANDS x HORIZONS = 8 x 4 x 3 = 96 possible slots, capped in practice by
+// TARGET_OPEN_PER_COIN to 8 x 2 = 16.
+export const BOARD_TARGET = 24
 export const BOARD_MIN = 12
 
-// How many OPEN markets to keep alive PER COIN. Capped at 2 so no single coin — Bitcoin, in
-// practice — can dominate the board or a parlay slip, and the two are picked from different
-// horizons so their close dates spread out. 3 coins x 2 = 6 crypto, so crypto no longer fills the
-// 12-market floor on its own: the board now leans on sports (clubs are in preseason, plus the World
-// Cup) and may sit below BOARD_MIN in a genuine fixture drought. That trade is deliberate — variety
-// over raw count. To lift crypto variety WITHOUT letting one coin dominate, add ids to CRYPTO_COINS
-// rather than raising this.
+// How many OPEN markets to keep alive PER COIN. Capped at 2 so no single coin can dominate the board
+// or a parlay slip, and the two are picked from different horizons so their close dates spread out.
+// With 8 coins that is up to 16 crypto markets, which comfortably holds BOARD_MIN on its own. To add
+// variety, add ids to CRYPTO_COINS (each verified against CoinGecko) rather than raising this cap —
+// raising it is what let Bitcoin take over the board before.
 export const TARGET_OPEN_PER_COIN = 2
 
 // Hard per-run creation cap. A bad config or price glitch can never spam more than this in one run.
@@ -109,6 +117,8 @@ export const SPORTS_FOLLOW: FollowedTeam[] = [
 ]
 
 // Ceiling on open sports markets, not a quota: real fixture supply is usually the binding limit.
-export const TARGET_OPEN_SPORTS = 10
+// Set to 8 so that within a 24-market board, crypto is left the 16 slots its 8 coins need (sports
+// fills first). Real fixture supply is typically around here anyway.
+export const TARGET_OPEN_SPORTS = 8
 export const FIXTURES_PER_TEAM = 2  // inspect each followed team's next N fixtures
 export const FOOTBALL_MAX_DAYS = 14 // skip football fixtures further out than this (keep the board timely)

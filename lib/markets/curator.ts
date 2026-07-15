@@ -101,6 +101,17 @@ export function generateCryptoCandidates(args: {
   return out
 }
 
+// Rounds a strike to a precision that fits its magnitude: whole dollars at/above $10 (BTC, ETH,
+// SOL, BNB, HYPE), cents from $1–$10 (XRP, NEAR), finer below $1 (SUI). A flat Math.round() would
+// collapse every band of a low-priced coin onto the same integer — SUI at $0.77 would make both
+// +5% and −5% resolve to "$1", a meaningless market — so the price bands must keep sub-dollar
+// precision or they stop being distinct.
+function roundTarget(price: number): number {
+  if (price >= 10) return Math.round(price)
+  if (price >= 1) return Math.round(price * 100) / 100
+  return Math.round(price * 1000) / 1000
+}
+
 // Advances a coin's cursor to its next not-yet-live slot and builds that market spec,
 // or returns null if the coin has no free slots left.
 function nextCandidate(
@@ -121,9 +132,10 @@ function nextCandidate(
     const slotKey = cryptoSlotKey(coin.id, templateKey, slot.band.label, slot.horizon.label)
     if (used.has(slotKey)) continue
 
-    const target = slot.band.direction === 'above'
-      ? Math.round(price * (1 + slot.band.pct))
-      : Math.round(price * (1 - slot.band.pct))
+    const raw = slot.band.direction === 'above'
+      ? price * (1 + slot.band.pct)
+      : price * (1 - slot.band.pct)
+    const target = roundTarget(raw)
     if (target <= 0) continue
 
     const resolveAt = new Date(now + slot.horizon.hours * MS_PER_HOUR).toISOString().slice(0, 16) // "YYYY-MM-DDTHH:mm" UTC
