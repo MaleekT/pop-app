@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { parseUnits, zeroAddress, keccak256, toHex } from 'viem'
 import { useAccount, useReadContract, useReadContracts, useWriteContract, usePublicClient } from 'wagmi'
@@ -18,6 +17,25 @@ import { USDC, erc20Abi } from '@/lib/contracts'
 import type { MarketRow, MarketStatus } from '@/lib/markets/db.types'
 
 const BASE = { address: PREDICT_MARKET_CONTRACT, abi: predictMarketAbi } as const
+
+// Returns the user to wherever they came from — the board, Activity, a parlay leg — instead of
+// always dumping them on /predict. Falls back to the board only on a cold load with no in-app
+// history (a shared link opened in a fresh tab).
+function BackLink() {
+  const router = useRouter()
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (typeof window !== 'undefined' && window.history.length > 1) router.back()
+        else router.push('/predict')
+      }}
+      style={{ ...backBtnStyle, display: 'inline-block' }}
+    >
+      ← Back
+    </button>
+  )
+}
 
 export default function MarketDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -75,7 +93,7 @@ export default function MarketDetailPage() {
   if (!market) {
     return (
       <><AppNav /><main style={{ maxWidth: 640, margin: '0 auto', padding: '48px 24px' }}>
-        <Link href="/predict" style={{ ...backBtnStyle, display: 'inline-block', textDecoration: 'none' }}>← Back to markets</Link>
+        <BackLink />
         <p style={{ color: 'var(--color-pop-muted)' }}>Market not found.</p>
       </main></>
     )
@@ -106,10 +124,20 @@ export default function MarketDetailPage() {
   const removable = isOwner && status === 'Pending' && poolSum === totalUserStake && parlayRefs === 0
 
   // One plain-language line per state, so a viewer always knows what happened and what is next.
-  const winningLabel = resolvedOutcome != null ? outcomes[resolvedOutcome] : undefined
+  // On a settled market a holder is told THEIR result (won/lost), not just which outcome won.
+  // Guaranteed a string (bounds-checked), so it never renders "undefined" in any banner branch.
+  // The contract validates outcome < outcomeCount at propose time, so the fallback is unreachable.
+  const winningLabel = resolvedOutcome != null && resolvedOutcome < outcomes.length ? outcomes[resolvedOutcome] : 'the winning outcome'
+  const holdsPosition = userOutcome >= 0
+  const resolvedBanner: { text: string; accent?: boolean } =
+    holdsPosition && resolvedOutcome != null
+      ? userOutcome === resolvedOutcome
+        ? { text: `You won. ${winningLabel} took it — claim your payout below.`, accent: true }
+        : { text: `You lost this one. ${winningLabel} won; you backed ${outcomes[userOutcome]}.` }
+      : { text: `Settled. ${winningLabel} won.`, accent: true }
   const statusBanner: { text: string; accent?: boolean } | null =
     status === 'Resolved'
-      ? { text: `Settled. ${winningLabel ?? 'The winning outcome'} won.`, accent: true }
+      ? resolvedBanner
       : status === 'Voided'
         ? { text: 'Cancelled. Everyone who deposited can claim their stake back.' }
         : status === 'Proposed' || status === 'Challenged'
@@ -122,7 +150,7 @@ export default function MarketDetailPage() {
     <>
       <AppNav />
       <main style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px 96px' }}>
-        <Link href="/predict" style={{ ...backBtnStyle, display: 'inline-block', textDecoration: 'none' }}>← Back to markets</Link>
+        <BackLink />
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
           <div style={{ flex: '1 1 420px', minWidth: 0 }}>

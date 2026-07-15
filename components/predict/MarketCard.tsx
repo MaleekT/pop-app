@@ -5,12 +5,26 @@ import { MarketStatusBadge } from '@/components/predict/MarketStatusBadge'
 import { categoryLabel, categoryPillStyle, outcomeColor, formatMarketTitle } from '@/components/predict/ui'
 import type { MarketRow } from '@/lib/markets/db.types'
 
+// The wallet's own outcome vs the market result, for the Activity view. A settled market states
+// which outcome won, but a user needs to know whether THEY won — otherwise "Settled" alone is
+// vague and they have to remember which side they took.
+function personalResult(market: MarketRow, backed: number): { label: string; color: string } | null {
+  if (market.status === 'Voided') return { label: 'Refunded', color: '#60A5FA' }
+  if (market.status !== 'Resolved' || market.resolved_outcome == null) return null
+  return market.resolved_outcome === backed
+    ? { label: 'You won', color: 'var(--color-pop-win)' }
+    : { label: 'You lost', color: 'var(--color-pop-danger)' }
+}
+
 // showStatus is for the Activity tab, where a user tracks their own positions and still needs to see
 // Settled/Cancelled. The board never passes it: every card there is open by definition, so the
-// colour-coded type pill carries the whole header.
-export function MarketCard({ market, showStatus = false }: { market: MarketRow; showStatus?: boolean }) {
+// colour-coded type pill carries the whole header. backedOutcome is the side this wallet took (also
+// Activity-only), which drives the "You backed X / You won" line.
+export function MarketCard({ market, showStatus = false, backedOutcome }: { market: MarketRow; showStatus?: boolean; backedOutcome?: number }) {
   const resolveMs = new Date(market.resolve_at).getTime()
   const bettingOpen = market.status === 'Pending' && resolveMs > Date.now()
+  const backedLabel = backedOutcome != null ? market.outcomes[backedOutcome] : undefined
+  const result = backedOutcome != null ? personalResult(market, backedOutcome) : null
 
   return (
     <Link href={`/predict/${market.on_chain_id}`} style={{ textDecoration: 'none' }}>
@@ -64,6 +78,20 @@ export function MarketCard({ market, showStatus = false }: { market: MarketRow; 
             </span>
           ))}
         </div>
+
+        {backedLabel && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingTop: 10, borderTop: '1px solid var(--color-pop-surface-2)' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: 'var(--color-pop-muted)' }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: outcomeColor(backedOutcome!) }} />
+              You backed&nbsp;<span style={{ color: 'var(--color-pop-text)', fontWeight: 600 }}>{backedLabel}</span>
+            </span>
+            {result && (
+              <span style={{ color: result.color, fontWeight: 700, fontSize: '0.78rem', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                {result.label}
+              </span>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 'auto' }}>
           {bettingOpen ? (
