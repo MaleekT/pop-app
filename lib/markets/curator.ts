@@ -8,7 +8,7 @@ import { marketDefinition, deriveOutcomes, asUTC } from '@/lib/markets/definitio
 import { CRYPTO_COINS, PRICE_BANDS, HORIZONS, TARGET_OPEN_PER_COIN, MAX_CREATES_PER_RUN, SPORTS_FOLLOW, TARGET_OPEN_SPORTS, FIXTURES_PER_TEAM, FOOTBALL_MAX_DAYS, BOARD_TARGET, BOARD_MIN, type CryptoCoin, type PriceBand, type Horizon } from '@/lib/markets/curator-config'
 import type { MarketRow } from '@/lib/markets/db.types'
 import { erc20Abi } from '@/lib/contracts'
-import { SEED_PER_OUTCOME } from '@/lib/markets/bankroll-config'
+import { SEED_PER_OUTCOME, SEED_APPROVE_BUFFER } from '@/lib/markets/bankroll-config'
 import { fetchUpcomingFixtures, type UpcomingFixture } from '@/lib/markets/engines/sports-fixtures'
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_PREDICT_MARKET_CONTRACT!
@@ -366,20 +366,42 @@ export async function runCurator(): Promise<CuratorResult> {
   const results: CuratorLog[] = []
   let created = 0
 
-  // One approve up front for the run's whole seed budget, so each market can be seeded the instant
-  // it exists. Approving more than we end up spending is harmless: it is the owner's own allowance
-  // to PredictMarket, which only ever pulls inside deposit().
+  // Ensure a USDC allowance to PredictMarket that covers this run's seeding, so each market can be
+  // seeded the instant it exists. The approve is the curator's most RPC-fragile step: on the laggy
+  // Arc RPC the tx routinely mines while its receipt wait times out, which previously aborted the
+  // whole run even though the allowance was set. So skip the approve when a standing allowance
+  // already covers the budget, approve a multi-run buffer when it does not (so most runs skip it),
+  // and after a wait timeout re-read the allowance before giving up.
   const seedBudget = SEED_PER_OUTCOME * BigInt(candidates.reduce((n, c) => n + c.outcomes.length, 0))
+  const readAllowance = () =>
+    publicClient.readContract({
+      address: USDC, abi: erc20Abi, functionName: 'allowance', args: [account.address, PREDICT_MARKET_CONTRACT],
+    }) as Promise<bigint>
+
+  let allowance = 0n
   try {
-    const approveHash = await walletClient.writeContract({
-      address: USDC, abi: erc20Abi, functionName: 'approve', args: [PREDICT_MARKET_CONTRACT, seedBudget],
-    })
-    await publicClient.waitForTransactionReceipt({ hash: approveHash })
-  } catch (approveErr) {
-    // With no allowance nothing can be seeded, and an unseeded market is a broken market. Create
-    // nothing rather than create markets we already know we cannot seed.
-    console.error('curator: seed approve failed; creating nothing this run:', approveErr)
-    return { created: 0, results: [{ slot: 'seed', outcome: 'approve-failed' }] }
+    allowance = await readAllowance()
+  } catch {
+    allowance = 0n // unreadable → treat as zero and try to approve
+  }
+
+  if (allowance < seedBudget) {
+    const approveAmount = seedBudget > SEED_APPROVE_BUFFER ? seedBudget : SEED_APPROVE_BUFFER
+    try {
+      const approveHash = await walletClient.writeContract({
+        address: USDC, abi: erc20Abi, functionName: 'approve', args: [PREDICT_MARKET_CONTRACT, approveAmount],
+      })
+      await publicClient.waitForTransactionReceipt({ hash: approveHash })
+    } catch (approveErr) {
+      // The tx often lands after the receipt wait times out on the flaky RPC — re-read the allowance
+      // before giving up, so a slow-but-successful approve doesn't needlessly abort the run.
+      console.error('curator: seed approve wait failed; re-checking allowance:', approveErr)
+      let after = 0n
+      try { after = await readAllowance() } catch { /* leave 0 */ }
+      if (after < seedBudget) {
+        return { created: 0, results: [{ slot: 'seed', outcome: 'approve-failed' }] }
+      }
+    }
   }
 
   for (const c of candidates) {
