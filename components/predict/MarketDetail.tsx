@@ -8,8 +8,9 @@ import { AppNav } from '@/components/AppNav'
 import { UsdcAmount } from '@/components/UsdcAmount'
 import { OddsBar } from '@/components/predict/OddsBar'
 import { MarketStatusBadge } from '@/components/predict/MarketStatusBadge'
+import { BackLink } from '@/components/predict/BackLink'
 import {
-  backBtnStyle, cardStyle, ctaStyle, secondaryCtaStyle, inputStyle,
+  cardStyle, ctaStyle, secondaryCtaStyle, inputStyle,
   categoryLabel, categoryPillStyle, outcomeColor, impliedPct, formatMarketTitle, friendlyTxError,
 } from '@/components/predict/ui'
 import { PREDICT_MARKET_CONTRACT, predictMarketAbi, MARKET_STATUS } from '@/lib/predict/contracts'
@@ -17,25 +18,6 @@ import { USDC, erc20Abi } from '@/lib/contracts'
 import type { MarketRow, MarketStatus } from '@/lib/markets/db.types'
 
 const BASE = { address: PREDICT_MARKET_CONTRACT, abi: predictMarketAbi } as const
-
-// Returns the user to wherever they came from — the board, Activity, a parlay leg — instead of
-// always dumping them on /predict. fallbackHref is the section this view is mounted under, used only
-// on a cold load with no in-app history (a shared link opened in a fresh tab).
-function BackLink({ fallbackHref }: { fallbackHref: string }) {
-  const router = useRouter()
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        if (typeof window !== 'undefined' && window.history.length > 1) router.back()
-        else router.push(fallbackHref)
-      }}
-      style={{ ...backBtnStyle, display: 'inline-block' }}
-    >
-      ← Back
-    </button>
-  )
-}
 
 export interface MarketDetailProps {
   id: string

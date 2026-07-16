@@ -7,11 +7,10 @@ import { useAccount } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { AppNav } from '@/components/AppNav'
 import { BetsList } from '@/components/BetsList'
-import { UsdcAmount } from '@/components/UsdcAmount'
 import { MarketCard } from '@/components/predict/MarketCard'
+import { ParlayTicketCard } from '@/components/predict/ParlayTicketCard'
 import { StatChip, StatRow } from '@/components/StatChip'
 import { SubTabs } from '@/components/SubTabs'
-import { cardStyle } from '@/components/predict/ui'
 import type { BetRow } from '@/lib/db.types'
 import type { MarketRow, ParlayRow } from '@/lib/markets/db.types'
 
@@ -21,14 +20,6 @@ type PositionRow = MarketRow & { outcomeIndex: number }
 
 const TABS: Tab[] = ['1v1', 'predictions', 'parlays']
 const SUB_FILTERS: SubFilter[] = ['active', 'resolved']
-
-// Parlay status colours, matching the parlay pages.
-const TICKET_STATUS_COLOR: Record<string, string> = {
-  Open: 'var(--color-pop-accent)',
-  Won: 'var(--color-pop-win)',
-  Lost: 'var(--color-pop-muted)',
-  Refunded: '#60A5FA',
-}
 
 // Unknown or absent values fall back to the old defaults, so a hand-edited URL degrades to the
 // landing view rather than rendering an empty tab.
@@ -241,20 +232,12 @@ function ActivityBody() {
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
               {shownTickets.map((t) => (
-                <Link key={t.on_chain_id} href={`/parlay/${t.on_chain_id}`} style={{ textDecoration: 'none' }}>
-                  <div style={{ ...cardStyle, padding: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem' }}>{t.legs.length} legs</span>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: TICKET_STATUS_COLOR[t.status] ?? 'var(--color-pop-muted)', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
-                        {t.status}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                      <span style={{ color: 'var(--color-pop-text)' }}><UsdcAmount amount={t.stake} /></span>
-                      <span style={{ color: 'var(--color-pop-accent)', fontWeight: 700, fontSize: '0.85rem' }}>{(Number(t.locked_multiplier) / 1e6).toFixed(2)}x</span>
-                    </div>
-                  </div>
-                </Link>
+                <ParlayTicketCard
+                  key={t.on_chain_id}
+                  ticket={t}
+                  // Reviewing a ticket you hold is an Activity job, so it keeps an Activity URL.
+                  href={`/activity/parlay/${t.on_chain_id}`}
+                />
               ))}
             </div>
           )}

@@ -1,13 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { parseUnits, parseEventLogs } from 'viem'
 import { useAccount, useReadContract, useWriteContract, usePublicClient } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { AppNav } from '@/components/AppNav'
 import { UsdcAmount } from '@/components/UsdcAmount'
+import { ParlayTicketCard } from '@/components/predict/ParlayTicketCard'
 import { PredictSubNav } from '@/components/predict/PredictSubNav'
 import { cardStyle, ctaStyle, inputStyle, outcomeColor, formatMarketTitle, friendlyTxError } from '@/components/predict/ui'
 import { PARLAY_CONTRACT, parlayAbi, USDC } from '@/lib/predict/contracts'
@@ -223,20 +223,7 @@ export default function ParlayPage() {
             <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 14px' }}>Your tickets</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
               {tickets.map((t) => (
-                <Link key={t.on_chain_id} href={`/parlay/${t.on_chain_id}`} style={{ textDecoration: 'none' }}>
-                  <div style={{ ...cardStyle, padding: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem' }}>{t.legs.length} legs</span>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: t.status === 'Won' ? 'var(--color-pop-win)' : t.status === 'Lost' ? 'var(--color-pop-muted)' : t.status === 'Refunded' ? '#60A5FA' : 'var(--color-pop-accent)', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
-                        {t.status}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                      <span style={{ color: 'var(--color-pop-text)' }}><UsdcAmount amount={t.stake} /></span>
-                      <span style={{ color: 'var(--color-pop-accent)', fontWeight: 700, fontSize: '0.85rem' }}>{(Number(t.locked_multiplier) / 1e6).toFixed(2)}x</span>
-                    </div>
-                  </div>
-                </Link>
+                <ParlayTicketCard key={t.on_chain_id} ticket={t} href={`/parlay/${t.on_chain_id}`} />
               ))}
             </div>
           </div>
