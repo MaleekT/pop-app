@@ -5,6 +5,7 @@ import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import { WagmiProvider } from 'wagmi'
 import { arcTestnet } from 'viem/chains'
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
+import { arcTransport } from '@/lib/markets/rpc'
 
 import '@rainbow-me/rainbowkit/styles.css'
 
@@ -15,10 +16,18 @@ if (!projectId) {
   console.warn('[Pop] NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set — WalletConnect disabled')
 }
 
+// Without an explicit `transports`, getDefaultConfig calls createDefaultTransports(chains), which is
+// ONE http() per chain aimed at the chain's default endpoint and no fallback. Every browser read
+// therefore rode a single public Arc endpoint that four crons already rate-limit ("request limit
+// reached", see 10983e2) — and a read that fails is indistinguishable from a zero, so a rate-limited
+// `staked` call rendered as "you hold no position". The server jobs were given failover in 10983e2;
+// this is the same transport, so the browser stops being the one client without it.
+// Safe in a client bundle on purpose: arcRpcUrls() is keyless by design (see lib/markets/rpc.ts).
 const config = getDefaultConfig({
   appName: 'Pop',
   projectId: projectId ?? 'no-walletconnect',
   chains: [arcTestnet],
+  transports: { [arcTestnet.id]: arcTransport() },
   ssr: true,
 })
 
