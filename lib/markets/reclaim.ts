@@ -1,4 +1,5 @@
-import { createWalletClient, createPublicClient, http } from 'viem'
+import { createWalletClient, createPublicClient } from 'viem'
+import { arcTransport } from '@/lib/markets/rpc'
 import { privateKeyToAccount } from 'viem/accounts'
 import { arcTestnet } from 'viem/chains'
 import { createMarketsClient } from '@/lib/markets/supabase'
@@ -46,12 +47,11 @@ export interface ReclaimResult {
 // `claimed` flag; bounded to a recent window.
 export async function runSeedReclaim(): Promise<ReclaimResult> {
   const key = requireEnv('RESOLVER_PRIVATE_KEY') as `0x${string}`
-  const rpc = process.env.NEXT_PUBLIC_ARC_TESTNET_RPC ?? 'https://rpc.testnet.arc.network'
   if (!CONTRACT_ADDRESS) throw new Error('NEXT_PUBLIC_PREDICT_MARKET_CONTRACT not configured')
 
   const account = privateKeyToAccount(key)
-  const publicClient = createPublicClient({ chain: arcTestnet, transport: http(rpc) })
-  const walletClient = createWalletClient({ account, chain: arcTestnet, transport: http(rpc) })
+  const publicClient = createPublicClient({ chain: arcTestnet, transport: arcTransport() })
+  const walletClient = createWalletClient({ account, chain: arcTestnet, transport: arcTransport() })
   const owner = account.address
   const db = createMarketsClient()
   const results: ReclaimLog[] = []

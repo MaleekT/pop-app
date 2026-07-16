@@ -1,4 +1,5 @@
-import { createWalletClient, createPublicClient, http, parseEventLogs } from 'viem'
+import { createWalletClient, createPublicClient, parseEventLogs } from 'viem'
+import { arcTransport } from '@/lib/markets/rpc'
 import { privateKeyToAccount } from 'viem/accounts'
 import { arcTestnet } from 'viem/chains'
 import { createMarketsClient } from '@/lib/markets/supabase'
@@ -65,12 +66,11 @@ async function reconcileFromChain(
 // own cron-job.org trigger, isolated from resolution and PvP.
 export async function runParlaySettler(): Promise<ParlaySettlerResult> {
   const key = requireEnv('RESOLVER_PRIVATE_KEY') as `0x${string}`
-  const rpc = process.env.NEXT_PUBLIC_ARC_TESTNET_RPC ?? 'https://rpc.testnet.arc.network'
   if (!PARLAY_ADDRESS) throw new Error('NEXT_PUBLIC_PARLAY_CONTRACT not configured')
 
   const account = privateKeyToAccount(key)
-  const publicClient = createPublicClient({ chain: arcTestnet, transport: http(rpc) })
-  const walletClient = createWalletClient({ account, chain: arcTestnet, transport: http(rpc) })
+  const publicClient = createPublicClient({ chain: arcTestnet, transport: arcTransport() })
+  const walletClient = createWalletClient({ account, chain: arcTestnet, transport: arcTransport() })
   const db = createMarketsClient()
   const results: SettleLog[] = []
 

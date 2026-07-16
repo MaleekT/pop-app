@@ -1,4 +1,5 @@
-import { createWalletClient, createPublicClient, http } from 'viem'
+import { createWalletClient, createPublicClient } from 'viem'
+import { arcTransport } from '@/lib/markets/rpc'
 import { privateKeyToAccount } from 'viem/accounts'
 import { arcTestnet } from 'viem/chains'
 import { PARLAY_CONTRACT, parlayAbi } from '@/lib/predict/contracts'
@@ -33,11 +34,10 @@ export interface HouseTopUpResult {
 // not a steady drain.
 export async function topUpHouseIfLow(): Promise<HouseTopUpResult> {
   const key = requireEnv('RESOLVER_PRIVATE_KEY') as `0x${string}`
-  const rpc = process.env.NEXT_PUBLIC_ARC_TESTNET_RPC ?? 'https://rpc.testnet.arc.network'
   if (!PARLAY_ADDRESS) throw new Error('NEXT_PUBLIC_PARLAY_CONTRACT not configured')
 
   const account = privateKeyToAccount(key)
-  const publicClient = createPublicClient({ chain: arcTestnet, transport: http(rpc) })
+  const publicClient = createPublicClient({ chain: arcTestnet, transport: arcTransport() })
 
   const available = (await publicClient.readContract({
     address: PARLAY_CONTRACT, abi: parlayAbi, functionName: 'houseAvailable',
@@ -50,7 +50,7 @@ export async function topUpHouseIfLow(): Promise<HouseTopUpResult> {
   const amount = houseTopUpAmount(available, ownerBalance, HOUSE_FLOOR, HOUSE_TARGET)
   if (amount <= 0n) return { topped: false, reason: 'owner-usdc-empty' }
 
-  const walletClient = createWalletClient({ account, chain: arcTestnet, transport: http(rpc) })
+  const walletClient = createWalletClient({ account, chain: arcTestnet, transport: arcTransport() })
   const approveHash = await walletClient.writeContract({
     address: USDC, abi: erc20Abi, functionName: 'approve', args: [PARLAY_CONTRACT, amount],
   })

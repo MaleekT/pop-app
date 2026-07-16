@@ -1,4 +1,5 @@
-import { createWalletClient, createPublicClient, http, keccak256, toHex, parseEventLogs } from 'viem'
+import { createWalletClient, createPublicClient, keccak256, toHex, parseEventLogs } from 'viem'
+import { arcTransport } from '@/lib/markets/rpc'
 import { privateKeyToAccount } from 'viem/accounts'
 import { arcTestnet } from 'viem/chains'
 import { createMarketsClient } from '@/lib/markets/supabase'
@@ -273,11 +274,10 @@ function isCurated(m: MarketRow): boolean {
 // so no new trust surface. Rate limited, idempotent (dedup by slot), and isolated.
 export async function runCurator(): Promise<CuratorResult> {
   const key = requireEnv('RESOLVER_PRIVATE_KEY') as `0x${string}`
-  const rpc = process.env.NEXT_PUBLIC_ARC_TESTNET_RPC ?? 'https://rpc.testnet.arc.network'
   if (!CONTRACT_ADDRESS) throw new Error('NEXT_PUBLIC_PREDICT_MARKET_CONTRACT not configured')
 
   const account = privateKeyToAccount(key)
-  const publicClient = createPublicClient({ chain: arcTestnet, transport: http(rpc) })
+  const publicClient = createPublicClient({ chain: arcTestnet, transport: arcTransport() })
 
   // createMarket is onlyOwner — fail fast on a key/deploy mismatch rather than sending
   // doomed txs (mirrors the resolver's on-chain resolver check).
@@ -361,7 +361,7 @@ export async function runCurator(): Promise<CuratorResult> {
   }
 
   // Guards passed and we have work — build the signing client once.
-  const walletClient = createWalletClient({ account, chain: arcTestnet, transport: http(rpc) })
+  const walletClient = createWalletClient({ account, chain: arcTestnet, transport: arcTransport() })
 
   const results: CuratorLog[] = []
   let created = 0

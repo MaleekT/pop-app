@@ -1,4 +1,5 @@
-import { createWalletClient, createPublicClient, http, keccak256, toHex } from 'viem'
+import { createWalletClient, createPublicClient, keccak256, toHex } from 'viem'
+import { arcTransport } from '@/lib/markets/rpc'
 import { privateKeyToAccount } from 'viem/accounts'
 import { arcTestnet } from 'viem/chains'
 import { createMarketsClient } from '@/lib/markets/supabase'
@@ -38,11 +39,10 @@ export interface MarketResolverResult {
 
 export async function runMarketResolver(): Promise<MarketResolverResult> {
   const resolverKey = requireEnv('RESOLVER_PRIVATE_KEY') as `0x${string}`
-  const rpc = process.env.NEXT_PUBLIC_ARC_TESTNET_RPC ?? 'https://rpc.testnet.arc.network'
   if (!CONTRACT_ADDRESS) throw new Error('NEXT_PUBLIC_PREDICT_MARKET_CONTRACT not configured')
 
   const account = privateKeyToAccount(resolverKey)
-  const publicClient = createPublicClient({ chain: arcTestnet, transport: http(rpc) })
+  const publicClient = createPublicClient({ chain: arcTestnet, transport: arcTransport() })
 
   const onChainResolver = await publicClient.readContract({
     address: PREDICT_MARKET_CONTRACT,
@@ -53,7 +53,7 @@ export async function runMarketResolver(): Promise<MarketResolverResult> {
     throw new Error(`Resolver mismatch: on-chain=${onChainResolver} wallet=${account.address}`)
   }
 
-  const walletClient = createWalletClient({ account, chain: arcTestnet, transport: http(rpc) })
+  const walletClient = createWalletClient({ account, chain: arcTestnet, transport: arcTransport() })
   const db = createMarketsClient()
   const now = new Date().toISOString()
   const results: ResultLog[] = []
