@@ -16,18 +16,29 @@ function personalResult(market: MarketRow, backed: number): { label: string; col
     : { label: 'You lost', color: 'var(--color-pop-danger)' }
 }
 
-// showStatus is for the Activity tab, where a user tracks their own positions and still needs to see
-// Settled/Cancelled. The board never passes it: every card there is open by definition, so the
-// colour-coded type pill carries the whole header. backedOutcome is the side this wallet took (also
-// Activity-only), which drives the "You backed X / You won" line.
-export function MarketCard({ market, showStatus = false, backedOutcome }: { market: MarketRow; showStatus?: boolean; backedOutcome?: number }) {
+interface MarketCardProps {
+  market: MarketRow
+  // Where this card leads. REQUIRED on purpose. It used to hardcode `/predict/${on_chain_id}`, which
+  // meant the Activity list had no way to keep its own users inside Activity: one component, one
+  // baked-in destination, two sections needing different ones. A default would silently put that bug
+  // back the moment a third call site forgets to think about it, so the compiler asks instead.
+  href: string
+  // For the Activity tab, where a user tracks their own positions and still needs to see
+  // Settled/Cancelled. The board never passes it: every card there is open by definition, so the
+  // colour-coded type pill carries the whole header.
+  showStatus?: boolean
+  // The side this wallet took (Activity-only), which drives the "You backed X / You won" line.
+  backedOutcome?: number
+}
+
+export function MarketCard({ market, href, showStatus = false, backedOutcome }: MarketCardProps) {
   const resolveMs = new Date(market.resolve_at).getTime()
   const bettingOpen = market.status === 'Pending' && resolveMs > Date.now()
   const backedLabel = backedOutcome != null ? market.outcomes[backedOutcome] : undefined
   const result = backedOutcome != null ? personalResult(market, backedOutcome) : null
 
   return (
-    <Link href={`/predict/${market.on_chain_id}`} style={{ textDecoration: 'none' }}>
+    <Link href={href} style={{ textDecoration: 'none' }}>
       <div
         onMouseEnter={(e) => {
           e.currentTarget.style.borderColor = 'rgba(215,255,30,0.35)'

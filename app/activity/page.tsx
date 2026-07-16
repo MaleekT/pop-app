@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { AppNav } from '@/components/AppNav'
@@ -18,6 +19,9 @@ type Tab = '1v1' | 'predictions' | 'parlays'
 type SubFilter = 'active' | 'resolved'
 type PositionRow = MarketRow & { outcomeIndex: number }
 
+const TABS: Tab[] = ['1v1', 'predictions', 'parlays']
+const SUB_FILTERS: SubFilter[] = ['active', 'resolved']
+
 // Parlay status colours, matching the parlay pages.
 const TICKET_STATUS_COLOR: Record<string, string> = {
   Open: 'var(--color-pop-accent)',
@@ -26,15 +30,54 @@ const TICKET_STATUS_COLOR: Record<string, string> = {
   Refunded: '#60A5FA',
 }
 
+// Unknown or absent values fall back to the old defaults, so a hand-edited URL degrades to the
+// landing view rather than rendering an empty tab.
+const parseTab = (v: string | null): Tab => (TABS.includes(v as Tab) ? (v as Tab) : '1v1')
+const parseSub = (v: string | null): SubFilter => (SUB_FILTERS.includes(v as SubFilter) ? (v as SubFilter) : 'active')
+
 export default function ActivityPage() {
+  return (
+    <>
+      <AppNav />
+      <main style={{ maxWidth: 1100, margin: '0 auto', padding: '48px 24px 96px' }}>
+        <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(2.25rem, 4.5vw, 3.25rem)', fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 10px' }}>
+          ACTIVITY
+        </h1>
+        <div style={{ width: 48, height: 3, background: 'var(--color-pop-accent)', borderRadius: 99, marginBottom: 14 }} />
+        <p style={{ color: 'var(--color-pop-muted)', margin: '0 0 28px', maxWidth: 560 }}>
+          Everything you have staked, in one place — your 1v1 bets, market predictions, and parlay tickets.
+        </p>
+
+        {/* Reading useSearchParams opts a client subtree out of static prerender, and the App Router
+            fails the build outright without a boundary around it. The shell above stays outside, so it
+            still prerenders and the tabs are all that wait on the URL. */}
+        <Suspense fallback={<p style={{ color: 'var(--color-pop-muted)' }}>Loading…</p>}>
+          <ActivityBody />
+        </Suspense>
+      </main>
+    </>
+  )
+}
+
+function ActivityBody() {
   const { address, isConnected } = useAccount()
-  const [tab, setTab] = useState<Tab>('1v1')
-  const [predTab, setPredTab] = useState<SubFilter>('active')
-  const [parTab, setParTab] = useState<SubFilter>('active')
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // The open tab lives in the URL, not in state. Held in state it was lost on every remount, so Back
+  // out of a position dropped the user on 1v1 Bets rather than the tab they opened it from.
+  const tab = parseTab(searchParams.get('tab'))
+  const sub = parseSub(searchParams.get('sub'))
+
   const [bets, setBets] = useState<BetRow[]>([])
   const [positions, setPositions] = useState<PositionRow[]>([])
   const [tickets, setTickets] = useState<ParlayRow[]>([])
   const [loading, setLoading] = useState(true)
+
+  // replace(), never push(): a tab is a view of one page, not a place. Pushing would stack an entry
+  // per click, so Back out of a market would rewind through tabs instead of leaving Activity.
+  const go = (next: { tab?: Tab; sub?: SubFilter }) =>
+    router.replace(`/activity?tab=${next.tab ?? tab}&sub=${next.sub ?? sub}`, { scroll: false })
 
   useEffect(() => {
     if (!address) {
@@ -78,147 +121,145 @@ export default function ActivityPage() {
 
   // Sub-tab filtering: Active = still open/awaiting resolution; Resolved = terminal.
   const shownPositions = positions.filter((p) =>
-    predTab === 'resolved' ? p.status === 'Resolved' || p.status === 'Voided' : p.status !== 'Resolved' && p.status !== 'Voided',
+    sub === 'resolved' ? p.status === 'Resolved' || p.status === 'Voided' : p.status !== 'Resolved' && p.status !== 'Voided',
   )
-  const shownTickets = tickets.filter((t) => (parTab === 'resolved' ? t.status !== 'Open' : t.status === 'Open'))
+  const shownTickets = tickets.filter((t) => (sub === 'resolved' ? t.status !== 'Open' : t.status === 'Open'))
+
+  if (!isConnected) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 16 }}>
+        <p style={{ color: 'var(--color-pop-muted)', margin: 0 }}>Connect your wallet to see your bets, positions, and tickets.</p>
+        <ConnectButton />
+      </div>
+    )
+  }
 
   return (
     <>
-      <AppNav />
-      <main style={{ maxWidth: 1100, margin: '0 auto', padding: '48px 24px 96px' }}>
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(2.25rem, 4.5vw, 3.25rem)', fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 10px' }}>
-          ACTIVITY
-        </h1>
-        <div style={{ width: 48, height: 3, background: 'var(--color-pop-accent)', borderRadius: 99, marginBottom: 14 }} />
-        <p style={{ color: 'var(--color-pop-muted)', margin: '0 0 28px', maxWidth: 560 }}>
-          Everything you have staked, in one place — your 1v1 bets, market predictions, and parlay tickets.
-        </p>
+      <div role="tablist" aria-label="Activity" style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
+        {tabs.map(([key, label]) => {
+          const active = tab === key
+          return (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => go({ tab: key })}
+              style={{
+                padding: '7px 16px', borderRadius: 'var(--radius-pill)', border: '1px solid',
+                borderColor: active ? 'var(--color-pop-accent)' : 'var(--color-pop-surface-2)',
+                background: active ? 'rgba(215,255,30,0.08)' : 'var(--color-pop-surface)',
+                color: active ? 'var(--color-pop-accent)' : 'var(--color-pop-muted)',
+                fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer',
+              }}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
 
-        {!isConnected ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 16 }}>
-            <p style={{ color: 'var(--color-pop-muted)', margin: 0 }}>Connect your wallet to see your bets, positions, and tickets.</p>
-            <ConnectButton />
-          </div>
+      {tab === '1v1' ? (
+        loading ? (
+          <p style={{ color: 'var(--color-pop-muted)' }}>Loading…</p>
+        ) : bets.length === 0 ? (
+          <EmptyState
+            text="No 1v1 bets yet"
+            sub="Challenge a friend to a peer-to-peer bet and it will show up here."
+            href="/new"
+            cta="Create a bet →"
+          />
+        ) : (
+          <BetsList bets={bets} address={address} loading={loading} />
+        )
+      ) : tab === 'predictions' ? (
+        loading ? (
+          <p style={{ color: 'var(--color-pop-muted)' }}>Loading…</p>
+        ) : positions.length === 0 ? (
+          <EmptyState
+            text="No market positions yet"
+            sub="Back an outcome on a prediction market and it will show up here."
+            href="/predict"
+            cta="Browse markets →"
+          />
         ) : (
           <>
-            <div role="tablist" aria-label="Activity" style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
-              {tabs.map(([key, label]) => {
-                const active = tab === key
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setTab(key)}
-                    style={{
-                      padding: '7px 16px', borderRadius: 'var(--radius-pill)', border: '1px solid',
-                      borderColor: active ? 'var(--color-pop-accent)' : 'var(--color-pop-surface-2)',
-                      background: active ? 'rgba(215,255,30,0.08)' : 'var(--color-pop-surface)',
-                      color: active ? 'var(--color-pop-accent)' : 'var(--color-pop-muted)',
-                      fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer',
-                    }}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
-            </div>
-
-            {tab === '1v1' ? (
-              loading ? (
-                <p style={{ color: 'var(--color-pop-muted)' }}>Loading…</p>
-              ) : bets.length === 0 ? (
-                <EmptyState
-                  text="No 1v1 bets yet"
-                  sub="Challenge a friend to a peer-to-peer bet and it will show up here."
-                  href="/new"
-                  cta="Create a bet →"
-                />
-              ) : (
-                <BetsList bets={bets} address={address} loading={loading} />
-              )
-            ) : tab === 'predictions' ? (
-              loading ? (
-                <p style={{ color: 'var(--color-pop-muted)' }}>Loading…</p>
-              ) : positions.length === 0 ? (
-                <EmptyState
-                  text="No market positions yet"
-                  sub="Back an outcome on a prediction market and it will show up here."
-                  href="/predict"
-                  cta="Browse markets →"
-                />
-              ) : (
-                <>
-                  <StatRow>
-                    <StatChip label="Positions" value={positions.length} />
-                    <StatChip label="Won" value={predWon} variant="accent" />
-                    <StatChip label="Lost" value={predLost} variant="danger" />
-                    {predVoided > 0 && <StatChip label="Voided" value={predVoided} variant="muted" />}
-                  </StatRow>
-                  <SubTabs
-                    tabs={[{ key: 'active', label: 'Active' }, { key: 'resolved', label: 'Resolved' }]}
-                    active={predTab}
-                    onSelect={(k) => setPredTab(k as SubFilter)}
-                  />
-                  {shownPositions.length === 0 ? (
-                    <p style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-pop-muted)' }}>No {predTab} predictions.</p>
-                  ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-                      {shownPositions.map((m) => <MarketCard key={`${m.contract_address}-${m.on_chain_id}`} market={m} showStatus backedOutcome={m.outcomeIndex} />)}
-                    </div>
-                  )}
-                </>
-              )
-            ) : loading ? (
-              <p style={{ color: 'var(--color-pop-muted)' }}>Loading…</p>
-            ) : tickets.length === 0 ? (
-              <EmptyState
-                text="No parlay tickets yet"
-                sub="Build a slip on the Parlay page and your tickets will show up here."
-                href="/parlay"
-                cta="Build a slip →"
-              />
+            <StatRow>
+              <StatChip label="Positions" value={positions.length} />
+              <StatChip label="Won" value={predWon} variant="accent" />
+              <StatChip label="Lost" value={predLost} variant="danger" />
+              {predVoided > 0 && <StatChip label="Voided" value={predVoided} variant="muted" />}
+            </StatRow>
+            <SubTabs
+              tabs={[{ key: 'active', label: 'Active' }, { key: 'resolved', label: 'Resolved' }]}
+              active={sub}
+              onSelect={(k) => go({ sub: k as SubFilter })}
+            />
+            {shownPositions.length === 0 ? (
+              <p style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-pop-muted)' }}>No {sub} predictions.</p>
             ) : (
-              <>
-                <StatRow>
-                  <StatChip label="Tickets" value={tickets.length} />
-                  <StatChip label="Won" value={parWon} variant="accent" />
-                  <StatChip label="Lost" value={parLost} variant="danger" />
-                  {parRefunded > 0 && <StatChip label="Refunded" value={parRefunded} variant="muted" />}
-                </StatRow>
-                <SubTabs
-                  tabs={[{ key: 'active', label: 'Active' }, { key: 'resolved', label: 'Resolved' }]}
-                  active={parTab}
-                  onSelect={(k) => setParTab(k as SubFilter)}
-                />
-                {shownTickets.length === 0 ? (
-                  <p style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-pop-muted)' }}>No {parTab} tickets.</p>
-                ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
-                    {shownTickets.map((t) => (
-                      <Link key={t.on_chain_id} href={`/parlay/${t.on_chain_id}`} style={{ textDecoration: 'none' }}>
-                        <div style={{ ...cardStyle, padding: 16 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                            <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem' }}>{t.legs.length} legs</span>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: TICKET_STATUS_COLOR[t.status] ?? 'var(--color-pop-muted)', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
-                              {t.status}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                            <span style={{ color: 'var(--color-pop-text)' }}><UsdcAmount amount={t.stake} /></span>
-                            <span style={{ color: 'var(--color-pop-accent)', fontWeight: 700, fontSize: '0.85rem' }}>{(Number(t.locked_multiplier) / 1e6).toFixed(2)}x</span>
-                          </div>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+                {shownPositions.map((m) => (
+                  <MarketCard
+                    key={`${m.contract_address}-${m.on_chain_id}`}
+                    market={m}
+                    // Checking a position you hold is an Activity job, so it keeps an Activity URL.
+                    href={`/activity/market/${m.on_chain_id}`}
+                    showStatus
+                    backedOutcome={m.outcomeIndex}
+                  />
+                ))}
+              </div>
             )}
           </>
-        )}
-      </main>
+        )
+      ) : loading ? (
+        <p style={{ color: 'var(--color-pop-muted)' }}>Loading…</p>
+      ) : tickets.length === 0 ? (
+        <EmptyState
+          text="No parlay tickets yet"
+          sub="Build a slip on the Parlay page and your tickets will show up here."
+          href="/parlay"
+          cta="Build a slip →"
+        />
+      ) : (
+        <>
+          <StatRow>
+            <StatChip label="Tickets" value={tickets.length} />
+            <StatChip label="Won" value={parWon} variant="accent" />
+            <StatChip label="Lost" value={parLost} variant="danger" />
+            {parRefunded > 0 && <StatChip label="Refunded" value={parRefunded} variant="muted" />}
+          </StatRow>
+          <SubTabs
+            tabs={[{ key: 'active', label: 'Active' }, { key: 'resolved', label: 'Resolved' }]}
+            active={sub}
+            onSelect={(k) => go({ sub: k as SubFilter })}
+          />
+          {shownTickets.length === 0 ? (
+            <p style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-pop-muted)' }}>No {sub} tickets.</p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+              {shownTickets.map((t) => (
+                <Link key={t.on_chain_id} href={`/parlay/${t.on_chain_id}`} style={{ textDecoration: 'none' }}>
+                  <div style={{ ...cardStyle, padding: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.8rem' }}>{t.legs.length} legs</span>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: TICKET_STATUS_COLOR[t.status] ?? 'var(--color-pop-muted)', textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
+                        {t.status}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <span style={{ color: 'var(--color-pop-text)' }}><UsdcAmount amount={t.stake} /></span>
+                      <span style={{ color: 'var(--color-pop-accent)', fontWeight: 700, fontSize: '0.85rem' }}>{(Number(t.locked_multiplier) / 1e6).toFixed(2)}x</span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </>
   )
 }

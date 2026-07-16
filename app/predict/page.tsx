@@ -150,7 +150,7 @@ export default function PredictPage() {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
             {filtered.map((m) => (
-              <MarketCard key={`${m.contract_address}-${m.on_chain_id}`} market={m} />
+              <MarketCard key={`${m.contract_address}-${m.on_chain_id}`} market={m} href={`/predict/${m.on_chain_id}`} />
             ))}
           </div>
         )}
