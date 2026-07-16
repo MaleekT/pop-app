@@ -143,7 +143,10 @@ export default function MarketDetailPage() {
         : status === 'Proposed' || status === 'Challenged'
           ? { text: 'Settling now. The result is in and this market is being finalized.' }
           : status === 'Pending' && !bettingOpen
-            ? { text: 'Betting is closed. This market settles automatically, usually within a minute or two.' }
+            // No time promise here: betting on a fixture closes at kick-off, so this is the state a
+            // market holds for the whole match. It settles on the first resolver run after the
+            // result is final, which is immediate for a crypto strike and the final whistle for a game.
+            ? { text: 'Betting is closed. This market settles automatically as soon as the result is final.' }
             : null
 
   return (

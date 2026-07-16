@@ -163,7 +163,14 @@ function nextCandidate(
   return null
 }
 
-const SPORTS_RESOLVE_BUFFER_MS = 3 * MS_PER_HOUR // resolve 3h after kick-off (match + buffer)
+// Betting on a fixture closes at kick-off, so resolveAt IS the kick-off. resolveAt does double duty
+// in the contract: it is the betting deadline (PredictMarket:109 BettingClosed) and the earliest the
+// resolver may propose (PredictMarket:150 TooEarly). Padding it past kick-off therefore did two bad
+// things at once — it left betting open on a match whose result was already public, and it blocked
+// settlement until the pad expired. Nothing here needs to wait for the match to end: the engine
+// reports `pending` until the fixture reads FT, so settlement fires on the first run after the
+// final whistle and not a moment before.
+const SPORTS_MIN_LEAD_MS = 30 * 60_000
 
 // Pure generation: turns upcoming fixtures into 3-way sports_winner market specs, skipping
 // fixtures already listed or whose resolve time is past. Deterministic and side-effect free.
@@ -183,15 +190,16 @@ export function generateSportsCandidates(args: {
     if (used.has(f.id)) continue
     const kickoff = Date.parse(f.date)
     if (isNaN(kickoff)) continue
-    const resolveMs = kickoff + SPORTS_RESOLVE_BUFFER_MS
-    if (resolveMs <= now) continue
+    // A fixture about to start is not worth opening — there is no betting window left — and
+    // createMarket reverts BadTiming if kick-off has passed by the time the create tx lands.
+    if (kickoff - now < SPORTS_MIN_LEAD_MS) continue
 
     const params: Record<string, string> = {
       sport: f.sport,
       fixtureId: f.id,
       homeTeam: f.homeTeam,
       awayTeam: f.awayTeam,
-      resolveAt: new Date(resolveMs).toISOString().slice(0, 16),
+      resolveAt: new Date(kickoff).toISOString().slice(0, 16),
     }
     // 2-way "draw no bet": a drawn match voids and refunds (the resolver voids a draw in a
     // 2-outcome market). Safe for knockout ties decided on penalties, which a 3-way market

@@ -177,7 +177,7 @@ describe('generateSportsCandidates', () => {
     competitive: false,
   })
 
-  it('builds a 3-way sports_winner market resolving 3h after kick-off', () => {
+  it('builds a sports_winner market that closes at kick-off', () => {
     const [c] = generateSportsCandidates({
       fixtures: [fixture('tsdb:1', 'Real Madrid', 'Barcelona', 24)],
       existingFixtureIds: new Set(),
@@ -191,7 +191,19 @@ describe('generateSportsCandidates', () => {
     expect(c.outcomes).toEqual(['Real Madrid', 'Barcelona']) // 2-way "draw no bet"
     expect(c.definitionText).toBe('Real Madrid vs Barcelona: who wins? (football fixture tsdb:1)')
     expect(c.definitionHash).toBe(keccak256(toHex(c.definitionText)))
-    expect(c.params.resolveAt).toBe(new Date(NOW + 27 * 3_600_000).toISOString().slice(0, 16)) // kickoff + 3h
+    // Kick-off itself, NOT kick-off plus a buffer: resolveAt is the betting deadline as well as the
+    // earliest propose time, so any pad would leave betting open on an already-decided match.
+    expect(c.params.resolveAt).toBe(new Date(NOW + 24 * 3_600_000).toISOString().slice(0, 16))
+  })
+
+  it('skips a fixture too close to kick-off to leave a betting window', () => {
+    const out = generateSportsCandidates({
+      fixtures: [fixture('tsdb:soon', 'A', 'B', 0.25), fixture('tsdb:later', 'C', 'D', 24)],
+      existingFixtureIds: new Set(),
+      now: NOW,
+      limit: 5,
+    })
+    expect(out.map((c) => c.params.fixtureId)).toEqual(['tsdb:later'])
   })
 
   it('skips fixtures already listed and respects the limit', () => {
