@@ -177,7 +177,7 @@ describe('generateSportsCandidates', () => {
     competitive: false,
   })
 
-  it('builds a sports_winner market that closes at kick-off', () => {
+  it('builds a sports_winner market that closes a minute before kick-off', () => {
     const [c] = generateSportsCandidates({
       fixtures: [fixture('tsdb:1', 'Real Madrid', 'Barcelona', 24)],
       existingFixtureIds: new Set(),
@@ -191,9 +191,10 @@ describe('generateSportsCandidates', () => {
     expect(c.outcomes).toEqual(['Real Madrid', 'Barcelona']) // 2-way "draw no bet"
     expect(c.definitionText).toBe('Real Madrid vs Barcelona: who wins? (football fixture tsdb:1)')
     expect(c.definitionHash).toBe(keccak256(toHex(c.definitionText)))
-    // Kick-off itself, NOT kick-off plus a buffer: resolveAt is the betting deadline as well as the
-    // earliest propose time, so any pad would leave betting open on an already-decided match.
-    expect(c.params.resolveAt).toBe(new Date(NOW + 24 * 3_600_000).toISOString().slice(0, 16))
+    // A minute BEFORE kick-off, and never after it: resolveAt is the betting deadline as well as the
+    // earliest propose time, so a pad past kick-off would leave betting open on a match whose result
+    // is already public. This assertion is the regression guard for that.
+    expect(c.params.resolveAt).toBe(new Date(NOW + 24 * 3_600_000 - 60_000).toISOString().slice(0, 16))
   })
 
   it('skips a fixture too close to kick-off to leave a betting window', () => {

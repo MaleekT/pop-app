@@ -172,6 +172,18 @@ function nextCandidate(
 // final whistle and not a moment before.
 const SPORTS_MIN_LEAD_MS = 30 * 60_000
 
+// Betting shuts a minute BEFORE the whistle, never on it. resolveAt is minute-truncated below, and
+// a fixture's listed start is not its exact start, so closing exactly on kick-off leaves the last
+// seconds of a market open against a game that may already be underway. A minute of margin costs a
+// bettor nothing and removes the ambiguity entirely.
+//
+// This is the same separation PvP gets from two on-chain fields — Pop.sol has joinDeadline (betting
+// shuts, Pop.sol:94) and resolveAt (result callable, Pop.sol:124). PredictMarket has ONE resolveAt
+// doing both jobs and no setter, so the split lives here instead: resolveAt closes betting at
+// kick-off minus this, and the "result callable" half is the engine's FT gate, which reports
+// `pending` until the fixture is actually finished. Same guarantee, no contract change.
+const LOCK_BEFORE_KICKOFF_MS = 60_000
+
 // Pure generation: turns upcoming fixtures into 3-way sports_winner market specs, skipping
 // fixtures already listed or whose resolve time is past. Deterministic and side-effect free.
 export function generateSportsCandidates(args: {
@@ -199,7 +211,7 @@ export function generateSportsCandidates(args: {
       fixtureId: f.id,
       homeTeam: f.homeTeam,
       awayTeam: f.awayTeam,
-      resolveAt: new Date(kickoff).toISOString().slice(0, 16),
+      resolveAt: new Date(kickoff - LOCK_BEFORE_KICKOFF_MS).toISOString().slice(0, 16),
     }
     // 2-way "draw no bet": a drawn match voids and refunds (the resolver voids a draw in a
     // 2-outcome market). Safe for knockout ties decided on penalties, which a 3-way market
