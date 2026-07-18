@@ -17,8 +17,8 @@ const spaceGrotesk = Space_Grotesk({
 })
 
 export const metadata: Metadata = {
-  title: 'POP — Settle bets with friends. Instantly.',
-  description: 'Private peer-to-peer bets settled automatically. Stake USDC, let the agent call it, collect in seconds.',
+  title: 'POP · Predict anything. Settle without doubt.',
+  description: 'Back live prediction markets, challenge a friend 1v1, or stack a parlay. Stake USDC on Arc and let an agent settle the result from public data.',
 }
 
 export default function RootLayout({
