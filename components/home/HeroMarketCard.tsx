@@ -42,15 +42,12 @@ export function HeroMarketCard({ market }: { market: MarketRow }) {
 
   return (
     <div
+      className="hero-market-card"
       style={{
         background: 'var(--color-pop-surface)',
         border: '1px solid var(--color-pop-surface-2)',
         borderRadius: 20,
-        padding: 22,
         boxShadow: '0 30px 80px -20px rgba(0,0,0,0.7)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
@@ -86,14 +83,13 @@ export function HeroMarketCard({ market }: { market: MarketRow }) {
 export function HeroMarketCardSkeleton({ empty = false }: { empty?: boolean }) {
   return (
     <div
+      className="hero-market-card"
       style={{
         background: 'var(--color-pop-surface)',
         border: '1px dashed var(--color-pop-surface-2)',
         borderRadius: 20,
-        padding: 22,
-        minHeight: 220,
-        display: 'flex',
-        flexDirection: 'column',
+        // Inline wins over the class, so the placeholder centres its message while still inheriting
+        // the same width and height as the real card. The slot must not resize when data arrives.
         justifyContent: 'center',
         alignItems: 'center',
         gap: 10,

@@ -188,6 +188,28 @@ body {
   }
 }
 
+/* ── Hero market card ─────────────────────────────────────────────────────── */
+/* Width fills the grid column, so the card's right margin equals the copy's left margin.
+   Height is a SHARE OF THE COPY COLUMN, not of the viewport: the size we were matching is the
+   distance from the second headline line to the end of the paragraph, and that distance is set by
+   font size and text wrapping. vh would track the window instead and shrink the card on a short
+   laptop where the headline had not changed at all. A percentage tracks the thing it was measured
+   against. min-height rather than height so a long market title can still push the card taller. */
+.hero-market-card {
+  width: 100%;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+@media (min-width: 640px) {
+  .hero-market-card {
+    min-height: 56%;
+  }
+}
+
 /* ── Hero CTAs ────────────────────────────────────────────────────────────── */
 /* hover and focus-visible share the treatment so keyboard users get the same affordance */
 .hero-cta {

@@ -50,7 +50,10 @@ export function Hero() {
           <StatsBar />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {/* alignSelf: stretch gives this column the full row height (set by the copy beside it), which
+            is what the card's percentage height resolves against. alignItems: center then keeps the
+            card optically centred against the text exactly as before. */}
+        <div style={{ display: 'flex', alignItems: 'center', alignSelf: 'stretch' }}>
           {market === undefined
             ? <HeroMarketCardSkeleton />
             : market === null
