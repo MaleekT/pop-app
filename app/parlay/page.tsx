@@ -124,7 +124,7 @@ export default function ParlayPage() {
           Combine 2 or more open markets into one ticket. Every leg must hit, the odds multiply. Odds lock in when you buy.
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 20, alignItems: 'start' }}>
+        <div className="parlay-layout">
           {/* Market picker */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {markets.length === 0 ? (
@@ -166,7 +166,7 @@ export default function ParlayPage() {
           </div>
 
           {/* Slip */}
-          <div style={{ ...cardStyle, position: 'sticky', top: 84 }}>
+          <div className="parlay-slip" style={cardStyle}>
             <span style={{ fontSize: '0.95rem', fontWeight: 700 }}>Your slip</span>
             <div style={{ display: 'flex', justifyContent: 'space-between', margin: '14px 0 4px' }}>
               <span style={{ color: 'var(--color-pop-muted)', fontSize: '0.85rem' }}>Legs</span>

@@ -255,6 +255,42 @@ body {
   }
 }
 
+/* Centre the CTAs on phones. */
+@media (max-width: 639px) {
+  .hero-ctas {
+    justify-content: center;
+  }
+}
+
+/* ── Parlay builder layout ───────────────────────────────────────────────── */
+/* Desktop: market picker fills the row, the slip is a fixed sidebar that sticks while the markets
+   scroll past it. */
+.parlay-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 20px;
+  align-items: start;
+}
+
+.parlay-slip {
+  position: sticky;
+  top: 84px;
+  /* z-index plus the card's opaque background keep the markets scrolling BEHIND the slip on mobile,
+     where the slip is reordered above them and would otherwise be painted over. */
+  z-index: 3;
+}
+
+/* Phone and small tablet: one column, slip pinned on top, markets scroll beneath it. */
+@media (max-width: 767px) {
+  .parlay-layout {
+    grid-template-columns: 1fr;
+  }
+  .parlay-slip {
+    order: -1;
+    top: 72px;
+  }
+}
+
 /* ── Trust bands (marquee + market ticker) ───────────────────────────────── */
 /* Each track holds two identical copies, so a -50% shift loops seamlessly. */
 @keyframes pop-scroll {

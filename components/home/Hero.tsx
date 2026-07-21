@@ -42,7 +42,7 @@ export function Hero() {
             Back live prediction markets, settled automatically by an agent reading public data. Go head-to-head with a friend 1v1, or stack picks into a parlay. Stake USDC on Arc, collect on-chain.
           </p>
 
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div className="hero-ctas" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <Link href="/predict" className="hero-cta hero-cta-primary">Explore markets ↗</Link>
             <Link href="/new" className="hero-cta hero-cta-secondary">Challenge a friend ↗</Link>
           </div>
